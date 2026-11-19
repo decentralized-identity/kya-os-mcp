@@ -19,7 +19,7 @@ export function tappedRecords(
 ): typeof RecordsModule {
   const createDelegationDescriber: typeof actual.createDelegationDescriber = (deps) => {
     const describer = actual.createDelegationDescriber(deps);
-    return { describe: async (presentation) => tap(await describer.describe(presentation)) };
+    return { ...describer, describe: async (presentation) => tap(await describer.describe(presentation)) };
   };
   return { ...actual, createDelegationDescriber };
 }

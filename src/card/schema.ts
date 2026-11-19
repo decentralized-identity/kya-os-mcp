@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod';
 import { DID_MAX_LENGTH, didPattern, whyNotDid } from '../utils/did-syntax.js';
 
 /**

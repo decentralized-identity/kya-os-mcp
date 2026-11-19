@@ -56,6 +56,17 @@ export async function leftUnchanged(promise: Promise<unknown>): Promise<StatusEn
   return error as StatusEntryUnchangedError;
 }
 
+/** The refusal to register again the id of a delegation removed while it read as revoked. */
+export const REMOVED_WHILE_REVOKED = (id: string): string =>
+  `Delegation "${id}" was removed while revoked, and its id stays revoked: register the delegation under another id`;
+
+/** The message of the error that `promise` rejects with. */
+export async function rejectionMessage(promise: Promise<unknown>): Promise<string> {
+  const error = await rejection(promise);
+  expect(error).toBeInstanceOf(Error);
+  return (error as Error).message;
+}
+
 /** The registration refusal, the same whether the entry is unallocated, another's or in use. */
 export const REGISTRATION_REFUSED = (id: string): string =>
   `Delegation "${id}" cannot be registered with the status list entry it carries: a delegation must be ` +

@@ -1,0 +1,14 @@
+kind: Upgrading
+body: |-
+    **Give the checkpoint builder a `signatures` verifier that resolves the
+    recorder's key.** A `CompactJwsAuditSigner` over a private JWK, a
+    `KeyObject` or an extractable `CryptoKey` now verifies by default the
+    stored entries the recorder and the builder build on under its own key.
+    A builder that signs with a key of its own keeps building over the
+    recorder's entries as before, trusting them as written, and warns once
+    per process for each such key; only `signatures` verifies them. A
+    signer over a non-extractable `CryptoKey`, or one of your own without
+    `verifier()`, still trusts the journal as written: give both
+    `signatures`. UPGRADING.md, "The recorder and the checkpoint builder can
+    verify what the journal holds", has the steps.
+time: 2026-11-18T21:40:06.000000-06:00

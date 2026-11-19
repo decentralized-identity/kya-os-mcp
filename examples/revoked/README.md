@@ -66,7 +66,7 @@ sequenceDiagram
 
 ## The beats
 
-1. **The agent spends, safely.** It presents its W3C Delegation Credential (scope `payments.transfer`, capped at 10 CHEQ per transfer; the cap lives in the signed credential, not in app code) plus a per-request holder proof signed by its own did:key. The server runs `holderBinding: 'enforce'`, so the credential is subject-bound, not bearer. Real CHEQ moves on testnet, and every response carries a detached-JWS receipt.
+1. **The agent spends, safely.** It presents its W3C Delegation Credential (scope `payments.transfer`, capped at 10 CHEQ per transfer; the cap lives in the signed credential, not in app code) plus a per-request holder proof signed by its own did:key. The proof names that credential, so no other delegation can be put beside it. The server runs `holderBinding: 'enforce'`, so the credential is subject-bound, not bearer. Real CHEQ moves on testnet, and every response carries a detached-JWS receipt.
 2. **Attack theater.** An over-cap send fails with `SCOPE_CONSTRAINT_VIOLATED`, read from the credential. A thief replaying the stolen credential with their own key fails `holder_binding_failed` before the handler is entered.
 3. **The kill.** A FIDO2 touch authorizes the revocation. The WebAuthn challenge is the SHA-256 of the canonical revocation intent, so the assertion is bound to this exact revocation, not a generic login. A new status-list version publishes as an append-only DID-Linked Resource: the issuer cannot quietly un-revoke, and every verifier reads the same chain.
 4. **After the kill.** The agent can still read the public balance. It cannot move a token: `CREDENTIAL_REVOKED`, refused before the handler runs.

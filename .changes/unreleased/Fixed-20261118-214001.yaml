@@ -1,0 +1,16 @@
+kind: Fixed
+body: |-
+    **The journal provider contract fails a journal whose compare-and-append
+    is not atomic.** `evaluateAuditJournalProviderContract` appended one entry
+    at a time and offered no stale head but `null`, so a journal that reads
+    the head, compares it and then inserts in a second step passed every
+    check, and under concurrent submissions the recorder signed several
+    entries at one sequence. The contract now issues eight compare-and-append
+    calls on one expected head at once and requires exactly one to commit,
+    every other to answer `head_conflict` with the head that won or fail
+    without committing, and the journal to hold one entry at that sequence.
+    It also requires a `head_conflict` naming the actual head for an expected
+    head that is no longer the head, so a journal that compares only the
+    sequence fails too. AUDITABILITY.md, "Atomic journal contract", has the
+    detail.
+time: 2026-11-18T21:40:01.000000-06:00

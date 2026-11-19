@@ -5,7 +5,7 @@
  * Re-exported from `./chain-enforcement.ts`, where the chain walk applies them.
  */
 import type { CrispScope, DelegationCredential } from "../types/protocol.js";
-import { canonicalizeJson } from "../utils/canonical-json.js";
+import { sameCanonicalJson } from "../utils/canonical-json.js";
 import { parseDateTime } from "../utils/rfc3339.js";
 import { refusal, type Checked } from "../utils/refusal.js";
 import type { RefusalCoding } from "./vc-verifier.types.js";
@@ -126,15 +126,6 @@ function readableAuthority(credential: DelegationCredential): CrispScope[] {
   return authorityOf(credential) ?? [];
 }
 
-/** RFC 8785 equality. A value that cannot be canonicalized equals nothing. */
-function sameJson(a: unknown, b: unknown): boolean {
-  try {
-    return canonicalizeJson(a) === canonicalizeJson(b);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * SPEC.md §6.4: "Scope constraints MUST be equal to or narrower than parent's
  * constraints." Ways a re-delegation is wider than its parent, or cannot be
@@ -195,7 +186,7 @@ export function attenuationWarnings(
     const carried = new Map(constraintEntries(scope.constraints));
     // An unconstrained covering scope has no entries, so it is repeated vacuously.
     const repeatsOne = required.some((entries) =>
-      entries.every(([key, value]) => carried.has(key) && sameJson(carried.get(key), value)),
+      entries.every(([key, value]) => carried.has(key) && sameCanonicalJson(carried.get(key), value)),
     );
     if (!repeatsOne) {
       warnings.add(

@@ -13,6 +13,10 @@
  * derives the subject key straight from the DID and verifies the request proof
  * against it. A proof signed by any other key — a thief replaying a stolen
  * credential — cannot verify and is rejected.
+ * A request proof is EdDSA, so only an Ed25519 `did:key` can be bound: a
+ * subject that is a `did:key` of any other key, or one that does not decode,
+ * is reported `unbound`, never deferred, so a caller that enforces binding
+ * refuses it rather than take it as a bearer.
  *
  * `did:web` (and other non-`did:key`) subjects do not encode their key in the
  * DID and may rotate or hold several keys, so phase-1 cannot pin "the" key for
@@ -20,23 +24,34 @@
  * caller can defer them to cnf-based binding (phase 2) instead of rejecting
  * legitimate traffic. Callers MUST surface that gap (e.g. log it) rather than
  * treat `not_applicable` as success.
+ *
+ * A proof covers the call, not the delegation beside it, so the proof also
+ * states which delegation the call presents (`./stated-delegation.ts`).
+ * `verifyDelegatedCallProof` (`./delegated-call-proof.ts`) holds it to that
+ * one; {@link assertHolderBinding} alone proves possession of the subject's
+ * key and nothing about the delegation.
  */
 
 import { extractPublicKeyFromDidKey, publicKeyToJwk } from './did-key-resolver.js';
 import { getDidMethod, didKeyFragment } from '../utils/did-helpers.js';
-import { ProofGenerator } from '../proof/generator.js';
+import { ProofGenerator, PROTECTED_HEADER_PARAMETERS, type InternalProofOptions } from '../proof/generator.js';
 import { isKyaOsControlArg, withoutControlArgs } from '../proof/covered-request.js';
 import { base64urlEncodeFromBytes } from '../utils/base64.js';
 import type { ProofVerifier } from '../proof/verifier.js';
 import type { ToolRequest, ToolResponse, ProofAgentIdentity } from '../proof/generator.js';
-import type { DetachedProof } from '../types/protocol.js';
+import type { DetachedProof, ProofMeta } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
-import type { Ed25519JWK } from '../utils/crypto-service.js';
+import { jwsProtectedHeader, type Ed25519JWK } from '../utils/crypto-service.js';
+import type { ReceivedCredential } from './chain-digest.js';
+import { statementParameters } from './stated-delegation.js';
 
 // The control-arg predicate, and the copy of a call without its control args,
 // live with the request-hash rules they feed; they are re-exported here, where
 // the package entry point imports them.
 export { isKyaOsControlArg, withoutControlArgs };
+
+/** The control argument a call presents its delegation in. */
+const DELEGATION_ARG = '_kyaos_delegation';
 
 /**
  * The canonical request a holder-binding proof binds: the tool name plus the
@@ -69,18 +84,35 @@ export interface GenerateRequestProofInput {
   audience: string;
   /** The handshake session id, when one exists. */
   sessionId?: string;
+  /**
+   * The delegation the call presents, when it is not `args._kyaos_delegation`: the credential as it
+   * is sent (an object, or a VC-JWT by its string), or `'none'` for a call that presents none.
+   * Leave it out for a call whose `args` are the arguments it sends: the proof then states
+   * `args._kyaos_delegation`, or `'none'` when the arguments hold none. Pass it when the delegation
+   * travels outside the arguments, when it is attached to them after the proof is made, or to name
+   * the delegation of the durable grant a call that presents none is made under.
+   */
+  delegation?: ReceivedCredential;
 }
 
 /**
  * Mint the `_kyaos_proof` a key-bearing agent attaches to an outbound tool call
  * — the client half of holder binding. It is a request-only detached proof (no
  * response yet) signed by the agent's key over {@link toHolderBindingRequest}.
- * A fresh nonce is generated per call so the PEP's replay cache rejects reuse.
+ * Its protected header states the delegation the call presents (SPEC §7.8), so
+ * a server that holds proofs to it refuses this one beside any other delegation:
+ * pass the arguments the call sends, `_kyaos_delegation` among them, and nothing
+ * more is needed. A fresh nonce is generated per call so the PEP's replay cache
+ * rejects reuse.
+ *
+ * @throws `NoSignedFormError` for a `delegation` with no signed form (SPEC §7.8)
  */
 export async function generateRequestProof(
   input: GenerateRequestProofInput,
 ): Promise<DetachedProof> {
   const { identity, crypto, toolName, args, audience, sessionId } = input;
+  // What the proof states of its delegation (SPEC §7.8): `delegation`, or else the one in the arguments.
+  const stated = await statementParameters(input.delegation, args[DELEGATION_ARG], (bytes) => crypto.hash(bytes));
   const generator = new ProofGenerator(identity, crypto);
   const request = toHolderBindingRequest(toolName, args);
   const nonce = base64urlEncodeFromBytes(await crypto.randomBytes(16));
@@ -92,6 +124,7 @@ export async function generateRequestProof(
   // INVALID_PROOF_STRUCTURE, indistinguishably from a thief. Mint a per-proof
   // id instead, so the sessionless case (the stateless MCP core) works.
   const boundSessionId = sessionId ?? `req-${base64urlEncodeFromBytes(await crypto.randomBytes(9))}`;
+  const options: InternalProofOptions = { [PROTECTED_HEADER_PARAMETERS]: stated };
   return generator.generateProof(request, undefined, {
     sessionId: boundSessionId,
     audience,
@@ -101,7 +134,7 @@ export async function generateRequestProof(
     lastActivity: now,
     ttlMinutes: 30,
     identityState: 'anonymous',
-  });
+  }, options);
 }
 
 /**
@@ -117,19 +150,23 @@ export const HOLDER_BINDING_ERROR = 'holder_binding_failed';
  *   caller is the holder. Allow.
  * - `unbound` — subject is a did:key but the proof failed (wrong key, tampered
  *   request, stale, or replayed). Reject — this is the theft-replay closure.
+ *   It is also the status of a did:key that encodes no Ed25519 key, which no
+ *   proof could be checked with.
  * - `not_applicable` — subject is not a did:key, so phase-1 cannot bind it.
  *   Defer to cnf-based binding (phase 2); the caller decides how to treat it.
  */
 export type HolderBindingStatus = 'bound' | 'unbound' | 'not_applicable';
 
 /**
- * Whether phase-1 holder binding can bind this subject. True only for did:key
- * (the DID encodes the key). The PEP uses this to decide between *enforcing* a
- * proof (did:key) and *deferring* to cnf binding (did:web and others), so it
- * never rejects legitimate traffic it cannot yet bind.
+ * Whether phase-1 holder binding applies to this subject. True for every did:key
+ * (the DID encodes the key), whether or not its key is one a proof can be checked
+ * with. The PEP uses this to decide between *enforcing* a proof (did:key) and
+ * *deferring* to cnf binding (did:web and others), so it never rejects
+ * legitimate traffic it cannot yet bind, and never lets through as a bearer a
+ * did:key subject that it cannot bind.
  */
 export function isHolderBindingApplicable(subjectDid: string): boolean {
-  return extractPublicKeyFromDidKey(subjectDid) !== null;
+  return getDidMethod(subjectDid) === 'key';
 }
 
 export interface AssertHolderBindingInput {
@@ -170,8 +207,19 @@ export interface HolderBindingResult {
   cause?: string;
 }
 
+/** What the signature of a proof that bound its subject covers. */
+export interface SignedRequestProof {
+  /** The proof's meta as its signature covers it (SPEC §7.4). */
+  meta: ProofMeta;
+  /** The protected header of the JWS that verified. */
+  protectedHeader: Readonly<Record<string, unknown>>;
+}
+
 /**
  * Assert that `proof` is a holder-of-key proof for `subjectDid` over `request`.
+ * It says nothing of the delegation the call presents: an enforcement point
+ * that checks a delegated call uses `verifyDelegatedCallProof`, which holds
+ * the proof to that delegation too.
  *
  * @see module documentation for the did:key / did:web split and the security
  *   property each branch enforces.
@@ -179,40 +227,53 @@ export interface HolderBindingResult {
 export async function assertHolderBinding(
   input: AssertHolderBindingInput,
 ): Promise<HolderBindingResult> {
-  const { proof, subjectDid, request, response, expectedAudience, proofVerifier } = input;
+  return (await bindHolder(input)).result;
+}
+
+/**
+ * {@link assertHolderBinding}, with what the signature of a proof that bound
+ * covers. The proof's JWS is read once, so the header given back is the one
+ * the signature verified over, whatever the proof object answers later.
+ */
+export async function bindHolder(
+  input: AssertHolderBindingInput,
+): Promise<{ result: HolderBindingResult; signed?: SignedRequestProof }> {
+  const { subjectDid, request, response, expectedAudience, proofVerifier } = input;
+  const unbound = (reason: string, cause?: string): { result: HolderBindingResult } => ({
+    result: { status: 'unbound', errorCode: HOLDER_BINDING_ERROR, reason, ...(cause === undefined ? {} : { cause }) },
+  });
 
   // Phase-1 scope: did:key subjects only — the DID encodes the key, so holding
   // the key is being the subject. Anything else is deferred to cnf binding.
+  if (!isHolderBindingApplicable(subjectDid)) {
+    return {
+      result: {
+        status: 'not_applicable',
+        reason:
+          `Holder binding (phase 1) covers did:key subjects only; ` +
+          `"${getDidMethod(subjectDid) ?? 'unknown'}" is deferred to cnf-based binding`,
+      },
+    };
+  }
+  // A did:key of another key, or one that does not decode, can never be bound.
   const subjectKeyBytes = extractPublicKeyFromDidKey(subjectDid);
   if (!subjectKeyBytes) {
-    return {
-      status: 'not_applicable',
-      reason:
-        `Holder binding (phase 1) covers did:key subjects only; ` +
-        `"${getDidMethod(subjectDid) ?? 'unknown'}" is deferred to cnf-based binding`,
-    };
+    return unbound(
+      'The did:key subject does not encode an Ed25519 key, the only key a request proof is checked with',
+      'unsupported_subject_key',
+    );
   }
 
   // Fail closed on a structurally malformed proof (e.g. the {} a caller
   // substitutes when a string proof fails to parse) — never throw out of the
   // gate, which would surface as an internal error instead of a binding failure.
-  if (typeof proof?.meta !== 'object' || proof.meta === null) {
-    return {
-      status: 'unbound',
-      errorCode: HOLDER_BINDING_ERROR,
-      reason: 'Malformed proof: missing meta',
-    };
-  }
+  // The proof is read here, once: what is verified below is this reading.
+  const proof = { jws: input.proof?.jws, meta: input.proof?.meta } as DetachedProof;
+  if (typeof proof.meta !== 'object' || proof.meta === null) return unbound('Malformed proof: missing meta');
 
   // Pre-crypto consistency: the proof must self-declare the delegation subject.
   // Cheap, and gives a precise reason before the signature check.
-  if (proof.meta.did !== subjectDid) {
-    return {
-      status: 'unbound',
-      errorCode: HOLDER_BINDING_ERROR,
-      reason: 'Proof subject does not match the delegation subject',
-    };
-  }
+  if (proof.meta.did !== subjectDid) return unbound('Proof subject does not match the delegation subject');
 
   // Audience binding (RFC 8707): the proof must be addressed to THIS server. A
   // proof minted for another server cannot be replayed here. Checked before the
@@ -220,12 +281,7 @@ export async function assertHolderBinding(
   if (expectedAudience !== undefined) {
     const allowed = Array.isArray(expectedAudience) ? expectedAudience : [expectedAudience];
     if (!allowed.includes(proof.meta.audience)) {
-      return {
-        status: 'unbound',
-        errorCode: HOLDER_BINDING_ERROR,
-        reason: 'Proof audience does not match this server',
-        cause: 'audience_mismatch',
-      };
+      return unbound('Proof audience does not match this server', 'audience_mismatch');
     }
   }
 
@@ -244,14 +300,12 @@ export async function assertHolderBinding(
     request,
     ...(response !== undefined ? { response } : {}),
   });
-  if (!verification.valid) {
-    return {
-      status: 'unbound',
-      errorCode: HOLDER_BINDING_ERROR,
-      reason: 'Request proof is not bound to the delegation subject',
-      ...(verification.errorCode !== undefined ? { cause: verification.errorCode } : {}),
-    };
+  if (!verification.valid || verification.meta === undefined) {
+    return unbound('Request proof is not bound to the delegation subject', verification.errorCode);
   }
 
-  return { status: 'bound' };
+  return {
+    result: { status: 'bound' },
+    signed: { meta: verification.meta, protectedHeader: jwsProtectedHeader(proof.jws) },
+  };
 }

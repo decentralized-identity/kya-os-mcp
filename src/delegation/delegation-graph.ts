@@ -8,8 +8,8 @@
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
-import { registrationConflict } from './delegation-registration.js';
-import { canonicalStatusEntry, entryKey, nodeStatusEntry, readableStatusEntry } from './delegation-status-entry.js';
+import { parentRegistrationRefusal, registrationConflict, removedIdRefusal } from './delegation-registration.js';
+import { canonicalStatusEntry, entryKey, nodeStatusEntry } from './delegation-status-entry.js';
 import {
   assertRegistrable,
   readClaim,
@@ -17,82 +17,48 @@ import {
   type StatusEntrySources,
 } from './status-entry-claim.js';
 import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-owner.js';
+import { describeValue } from '../utils/describe-value.js';
 import { KeyedLock } from '../utils/keyed-lock.js';
+import { warnOncePerProcess } from '../utils/warn-once.js';
+import { graphChainBreak } from './graph-chain.js';
+import { removeDelegationNode, removeDelegationSubtree } from './delegation-removal.js';
+import { nodeTurnsOf, type NodeTurns } from './graph-node-turns.js';
+import {
+  supportsAtomicRegistration,
+  supportsStatusEntryLookup,
+  type DelegationGraphStorageProvider,
+  type DelegationNode,
+} from './delegation-graph-storage.js';
 
 export { statusEntryKey } from './delegation-status-entry.js';
+export { SubtreeRemovalError } from './delegation-removal.js';
 export type { StatusEntryClaim } from './status-entry-claim.js';
+export type {
+  AtomicDelegationGraphStorageProvider,
+  DelegationGraphStorageProvider,
+  DelegationNode,
+  StatusEntryIndexedGraphStorageProvider,
+} from './delegation-graph-storage.js';
 
-export interface DelegationNode {
-  id: string;
-  parentId: string | null;
-  children: string[];
-  issuerDid: string;
-  subjectDid: string;
-  /**
-   * Reference to the node's status list entry. Revocation flips a status bit
-   * only when it has the form `<statusListCredential>#<index>`; prefer
-   * {@link credentialStatus}, which needs no parsing. The same rule holds as
-   * for `credentialStatus`: it must name the entry the operator allocated for
-   * this delegation.
-   */
-  credentialStatusId?: string;
-  /**
-   * The node's status list entry, which revoking the delegation sets and
-   * restoring it clears. It must be an entry the operator allocated for this
-   * delegation (`StatusList2021Manager.allocateStatusEntry`), and no other
-   * delegation's. A credential states such an entry, but carrying one does
-   * not make it the delegation's: whoever signs a re-delegation writes the
-   * entry it carries, and can write another delegation's.
-   */
-  credentialStatus?: CredentialStatus;
-  /**
-   * Set when the delegation is revoked in the graph (SPEC.md §6.5 step 1).
-   * Recorded independently of the status list bit, so revocation holds even
-   * for a delegation that has no status list entry.
-   */
-  revoked?: boolean;
-}
+/** Where every copy of this package records that the warning about linking without `registerNodeAtomic` was given. */
+const UNLINKED_STORE_WARNED = Symbol.for('@kya-os/mcp/delegation-graph-unlinked-store-warned');
 
-export interface DelegationGraphStorageProvider {
-  getNode(delegationId: string): Promise<DelegationNode | null>;
-  setNode(node: DelegationNode): Promise<void>;
-  getChildren(delegationId: string): Promise<DelegationNode[]>;
-  getChain(delegationId: string): Promise<DelegationNode[]>;
-  getDescendants(delegationId: string): Promise<DelegationNode[]>;
-  deleteNode(delegationId: string): Promise<void>;
-}
+/** Fixed words, so nothing a store or a caller holds is ever written into the log line. */
+const UNLINKED_STORE_WARNING =
+  '[kya-os] DelegationGraphManager linked a delegation under its parent through a graph storage provider ' +
+  'without registerNodeAtomic, writing the whole parent back as it read it, so a revocation of the parent ' +
+  'made meanwhile through another process is lost. Managers over one storage provider object in one ' +
+  'process take turns; across processes, implement AtomicDelegationGraphStorageProvider ' +
+  "(registerNodeAtomic) on the store, changing only the parent's children, as MemoryDelegationGraphStorage does.";
 
-/** Optional transaction seam for providers that can link parent and child atomically. */
-export interface AtomicDelegationGraphStorageProvider extends DelegationGraphStorageProvider {
+/** Options of `DelegationGraphManager.removeDelegation`. */
+export interface RemoveDelegationOptions {
   /**
-   * Insert `node` and link it under its parent in one step. When the id is
-   * already stored, a node identical in every registered field is a no-op,
-   * and any other SHOULD be rejected: overwriting would drop the stored node's
-   * revocation state and children. `DelegationGraphManager` checks first, but
-   * only the provider can close the race between that check and the write.
+   * Remove every delegation under the delegation too, children first, each as one is removed.
+   * When any cannot be removed, every delegation above it is kept, the rest are removed, and a
+   * `SubtreeRemovalError` says which. Without it, a delegation with any under it is refused.
    */
-  registerNodeAtomic(node: DelegationNode): Promise<void>;
-}
-
-/**
- * Optional, stronger contract for providers that can find the nodes
- * registered with a status list entry. A graph built without
- * `statusEntryOwners` needs it to refuse an entry another delegation is
- * registered with, to name the delegations a revocation revokes too when it
- * sets an entry they share, and to refuse a restore that would clear one.
- * A graph built with `statusEntryOwners` needs it only for entries whose owner
- * was never recorded.
- */
-export interface StatusEntryIndexedGraphStorageProvider extends DelegationGraphStorageProvider {
-  /**
-   * The ids of every stored node whose {@link statusEntryKey} is `entryKey`,
-   * in any order, or none. Index each node by `statusEntryKey(node)` as it is
-   * stored, as `MemoryDelegationGraphStorage` does. A stored node for which
-   * `statusEntryKey` throws, one stored before entries were checked whose
-   * index no list can hold, sets no bit: leave it out of the index, and out of
-   * every answer, rather than fail every lookup.
-   */
-  getNodeIdsByStatusEntry(entryKey: string): Promise<string[]>;
+  subtree?: boolean;
 }
 
 /** Options of {@link DelegationGraphManager}. */
@@ -110,20 +76,6 @@ export interface DelegationGraphOptions {
   statusEntryOwners?: StatusEntryOwners;
 }
 
-function supportsAtomicRegistration(
-  storage: DelegationGraphStorageProvider,
-): storage is AtomicDelegationGraphStorageProvider {
-  return 'registerNodeAtomic' in storage &&
-    typeof storage.registerNodeAtomic === 'function';
-}
-
-function supportsStatusEntryLookup(
-  storage: DelegationGraphStorageProvider,
-): storage is StatusEntryIndexedGraphStorageProvider {
-  return 'getNodeIdsByStatusEntry' in storage &&
-    typeof storage.getNodeIdsByStatusEntry === 'function';
-}
-
 export class DelegationGraphManager {
   private readonly entrySources: StatusEntrySources;
   /**
@@ -131,6 +83,13 @@ export class DelegationGraphManager {
    * no two check and store that entry at once. Registrations with other entries run alongside.
    */
   private readonly registrations = new KeyedLock();
+  /**
+   * Runs the changes to one stored node one at a time, by the node's id: each reads the node and
+   * writes it back whole, so two at once would lose one. Shared by every manager over the same
+   * storage provider object, and each waits for its turn at most 10 seconds (`nodeTurnsOf`). A
+   * change to a node and then to its parent takes the node's turn first, never the other way round.
+   */
+  private readonly nodeTurns: NodeTurns;
 
   /**
    * @param options.statusEntryOwners - The `StatusList2021Manager` that
@@ -142,6 +101,7 @@ export class DelegationGraphManager {
     private storage: DelegationGraphStorageProvider,
     options: DelegationGraphOptions = {},
   ) {
+    this.nodeTurns = nodeTurnsOf(storage);
     const owners = options.statusEntryOwners;
     if (owners !== undefined && !readsStatusEntryOwners(owners)) {
       throw new TypeError(
@@ -223,10 +183,8 @@ export class DelegationGraphManager {
     }
 
     if (params.parentId) {
-      const parent = await this.storage.getNode(params.parentId);
-      if (!parent) {
-        throw new Error(`Parent delegation not found: ${params.parentId}`);
-      }
+      const refused = parentRegistrationRefusal(params.parentId, await this.storage.getNode(params.parentId));
+      if (refused !== undefined) throw refused;
     }
 
     // Registering an id again is a no-op when nothing registered changes, so
@@ -234,6 +192,7 @@ export class DelegationGraphManager {
     // revocation state and children or relinking it under its own descendant,
     // so it is refused.
     const existing = await this.storage.getNode(params.id);
+    if (existing?.removed === true) throw removedIdRefusal(params.id);
     if (existing) {
       const conflict = registrationConflict(existing, node);
       if (conflict === undefined) {
@@ -264,8 +223,29 @@ export class DelegationGraphManager {
     return this.entrySources.owners;
   }
 
-  /** Store a new node and link it under its parent: atomically when the provider can. */
+  /**
+   * Store a new node and link it under its parent: atomically when the provider can, and in the
+   * parent's turn, so no other change to the parent through a manager of this store is lost.
+   */
   private async storeNode(node: DelegationNode): Promise<void> {
+    const parentId = node.parentId;
+    if (!parentId) {
+      await this.linkNode(node);
+      return;
+    }
+    await this.nodeTurns.take(parentId, `given the child ${describeValue(node.id)}`, () => this.linkNode(node));
+  }
+
+  /**
+   * Store `node` and link it under its parent, which the caller holds the turn of. The parent is
+   * read again in its turn, so a removal of it that took the turn first refuses the node, rather
+   * than leave it under a parent the graph no longer holds or a record that holds no children.
+   */
+  private async linkNode(node: DelegationNode): Promise<void> {
+    if (node.parentId) {
+      const refused = parentRegistrationRefusal(node.parentId, await this.storage.getNode(node.parentId));
+      if (refused !== undefined) throw refused;
+    }
     if (supportsAtomicRegistration(this.storage)) {
       await this.storage.registerNodeAtomic(node);
       return;
@@ -296,6 +276,7 @@ export class DelegationGraphManager {
     }
 
     if (!parent.children.includes(childId)) {
+      warnOncePerProcess(UNLINKED_STORE_WARNED, UNLINKED_STORE_WARNING);
       parent.children.push(childId);
       await this.storage.setNode(parent);
     }
@@ -325,13 +306,16 @@ export class DelegationGraphManager {
    * the subtree itself.
    */
   async setRevoked(delegationId: string, revoked: boolean): Promise<boolean> {
-    const node = await this.storage.getNode(delegationId);
-    if (!node) {
-      throw new Error(`Delegation not found: ${delegationId}`);
-    }
-    await this.storage.setNode({ ...node, revoked });
-    const stored = await this.storage.getNode(delegationId);
-    return (stored?.revoked ?? false) === revoked;
+    const change = revoked ? 'marked revoked' : 'cleared of its revocation mark';
+    return this.nodeTurns.take(delegationId, change, async () => {
+      const node = await this.storage.getNode(delegationId);
+      if (!node) {
+        throw new Error(`Delegation not found: ${delegationId}`);
+      }
+      await this.storage.setNode({ ...node, revoked });
+      const stored = await this.storage.getNode(delegationId);
+      return (stored?.revoked ?? false) === revoked;
+    });
   }
 
   async getChildren(delegationId: string): Promise<DelegationNode[]> {
@@ -356,11 +340,21 @@ export class DelegationGraphManager {
     return chain.length - 1;
   }
 
+  /**
+   * Whether the graph holds a chain from a root to `delegationId` in which each delegation was
+   * issued by the subject of its parent. A chain that stops at a node the graph does not hold, as
+   * a replica that has not received it or a store that lost it reads, is invalid, as is one that
+   * ends at another delegation or whose links do not follow each `parentId`.
+   */
   async validateChain(delegationId: string): Promise<{ valid: boolean; reason?: string }> {
     const chain = await this.getChain(delegationId);
 
     if (chain.length === 0) {
       return { valid: false, reason: 'Delegation not found' };
+    }
+    const broken = graphChainBreak(chain, delegationId);
+    if (broken !== undefined) {
+      return { valid: false, reason: `Invalid chain: ${broken}` };
     }
 
     for (let i = 1; i < chain.length; i++) {
@@ -373,13 +367,6 @@ export class DelegationGraphManager {
           reason: `Invalid chain: ${child.id} issued by ${child.issuerDid} but parent ${parent.id} subject is ${parent.subjectDid}`,
         };
       }
-
-      if (child.parentId !== parent.id) {
-        return {
-          valid: false,
-          reason: `Invalid chain: ${child.id} parentId=${child.parentId} but actual parent is ${parent.id}`,
-        };
-      }
     }
 
     return { valid: true };
@@ -390,31 +377,26 @@ export class DelegationGraphManager {
    * `statusEntryOwners`, the entry allocated to it is retired first, so no
    * delegation, under any id, is registered with it again; a node that
    * carries an entry allocated to another retires nothing.
+   *
+   * Throws, removing nothing, for a delegation with delegations registered
+   * under it, which would be left under a parent the graph does not hold, so
+   * that none could be read to a root: pass `{ subtree: true }` to remove them
+   * with it, children first, or remove them first.
+   *
+   * A delegation that has no status list entry, and that reads as revoked in
+   * the graph, through its own mark, an ancestor's, or a chain that does not
+   * read to a root, leaves a revoked record of its id (`DelegationNode.removed`)
+   * in place of its node, since the graph holds the only record of its
+   * revocation and a delegation it does not hold reads as not revoked. The id
+   * so stays revoked: it is never restored, registered again, nor given
+   * children. A delegation with an entry is removed whole: its entry records
+   * its revocation, and a verifier reads it from the credential.
    */
-  async removeDelegation(delegationId: string): Promise<void> {
-    const node = await this.storage.getNode(delegationId);
-    if (!node) return;
-    await this.retireOwnedEntry(node);
-
-    if (node.parentId) {
-      const parent = await this.storage.getNode(node.parentId);
-      if (parent) {
-        parent.children = parent.children.filter((id) => id !== delegationId);
-        await this.storage.setNode(parent);
-      }
-    }
-
-    await this.storage.deleteNode(delegationId);
-  }
-
-  /** Retire `node`'s entry when the graph reads owners and the entry was allocated to `node`. */
-  private async retireOwnedEntry(node: DelegationNode): Promise<void> {
-    const owners = this.entrySources.owners;
-    const entry = owners === undefined ? undefined : readableStatusEntry(node);
-    if (owners === undefined || entry === undefined) return;
-    if ((await owners.getStatusEntryOwner(entry))?.delegationId === node.id) {
-      await owners.retireStatusEntry(entry);
-    }
+  async removeDelegation(delegationId: string, options: RemoveDelegationOptions = {}): Promise<void> {
+    const context = { storage: this.storage, turns: this.nodeTurns, owners: this.entrySources.owners };
+    await (options.subtree === true
+      ? removeDelegationSubtree(context, delegationId)
+      : removeDelegationNode(context, delegationId));
   }
 }
 

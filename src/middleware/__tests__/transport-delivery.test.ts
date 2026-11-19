@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
+import * as z from 'zod';
 import {
   McpServer as McpServer2,
   WebStandardStreamableHTTPServerTransport,

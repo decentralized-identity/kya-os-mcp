@@ -23,7 +23,7 @@ import { carryingContext } from "../utils/status-check-carrier.js";
 import { readVerdict } from "../utils/verdict.js";
 import { coded, refusal, refusalCodeOf, type Checked, type Refusal } from "../utils/refusal.js";
 import type { RefusalCode } from "../refusal-codes.js";
-import { credentialIssuerRefusal } from "./credential-issuer.js";
+import { credentialIssuerRefusal, isIssuerUrl } from "./credential-issuer.js";
 import { DID_RESOLUTION_TIMEOUT_MS } from "./did-resource-limits.js";
 import { resolveExplained, unresolvedIssuer, type ExplainedResolution } from "./did-resolution-failure.js";
 import { WRAPPED_REASON_LENGTH, readRevoked, unreadableStatusReason } from "../utils/revocation-answer.js";
@@ -125,8 +125,20 @@ function delegationStatusCode(status: unknown): RefusalCode {
  * other than `id` and `delegation`. Claim-bearing fields in a permission
  * credential separate designation from authorization — the confused-deputy
  * class (KYA-OS §11.6). Unconditional as of 1.4.0.
+ *
+ * Its `id` is held to the rule an issuer is ({@link isIssuerUrl}): a URL as it
+ * stands, holding no character a reader does not see. A re-delegating agent
+ * writes the subject of the credential it signs, and the gate hands it on as
+ * the acting agent's DID, into the audit trail, the tool's context and the log,
+ * where a line break or a bidirectional control in it would forge a line or
+ * show another agent's DID.
  */
 function validateSubjectShape(vc: DelegationCredential): Checked {
+  const subjectId = vc.credentialSubject.id;
+  if (!isIssuerUrl(subjectId)) {
+    return refusal("delegation_malformed", `Credential subject id ${describeValue(subjectId)} is not a URL`);
+  }
+
   const extraneous = Object.keys(vc.credentialSubject).filter(
     (key) => !DELEGATION_SUBJECT_KEYS.includes(key),
   );

@@ -1,10 +1,10 @@
 /**
  * A refused status entry says why. The checker `createRevocationChecker` builds answers every entry
  * it cannot prove clear with `{ revoked: true, fresh: false, reason }`, the reason naming the step
- * that refused it: the entry's purpose or size, or the list's purpose, issuer or `id`, or its proof.
- * A list that could not be read, or whose bits could not be decoded, is named and said only to be
- * unread, since whoever presented the entry chose its URL, and what the read or the decoder said
- * goes to the operator's log. `evaluateRevocationChain` appends the reason a checker gives to the hop's
+ * that refused it: the entry's purpose or size, or the list's proof. A list that could not be read,
+ * whose bits could not be decoded, or whose purpose, issuer or `id` is refused before its proof is
+ * checked, is named and said only to be unread, since whoever presented the entry chose its URL, and
+ * what the read, the decoder or the rule said goes to the operator's log. `evaluateRevocationChain` appends the reason a checker gives to the hop's
  * refusal, so it reaches `evaluateDelegationChain`, `verifyRequestDelegation` and
  * `requireDelegation`, and `verifyCard` reports it. A reason is text for people: the shipped
  * checker's own is cut at `CHECKER_REASON_LENGTH`, 512, UTF-16 code units, a custom checker's at
@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import { logger } from '../../logging/index.js';
-import { CHECKER_REASON_LENGTH, createRevocationChecker, evaluateRevocationChain, type RevocationStatusEntry } from '../revocation.js';
+import { createRevocationChecker, evaluateRevocationChain, type RevocationStatusEntry } from '../revocation.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { verifyCard } from '../verify.js';
 import type { EntityCard } from '../schema.js';
@@ -23,11 +23,14 @@ import { BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
 import { WRAPPED_REASON_LENGTH } from '../../utils/revocation-answer.js';
 import type { RefusalCode } from '../../refusal-codes.js';
 import { cast, listOf, listUrlOf, servedBy, threeHopChain, verdicts } from './status-list-paths.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const owner = identity();
 const other = identity();
 const ENTRY: RevocationStatusEntry = { statusListCredential: STATUS_URL, statusListIndex: '7' };
 const UNREAD = `the status list at "${STATUS_URL}" could not be read or checked`;
+/** The reason a refusal gives where the list's words went to the operator's log. */
+const UNREAD_REASON = `${UNREAD}${WITHHELD_SUFFIX}`;
 const HOP = `revocation: hop 0 (list "${STATUS_URL}", index "7") is revoked or unresolvable ${String.fromCodePoint(0x2014)} fail-closed, subtree invalidated`;
 
 /** The verdict of the shipped checker, holding lists to `owner`, on `entry` when `body` is served at the list's URL. */
@@ -66,8 +69,10 @@ describe('the reason the shipped checker gives', () => {
   it.each<[string, Record<string, unknown> | undefined, string, RefusalCode]>([
     ['is of another purpose', statusList(owner, [], { credentialSubject: { statusPurpose: 'suspension' } }), `status list statusPurpose mismatch: the list's is "suspension" and the entry's is "revocation"`, 'status_signer_untrusted'],
     ['states another id', statusList(owner, [], { id: 'https://elsewhere.example/1' }), `status list id "https://elsewhere.example/1" is not the URL it was fetched from ("${STATUS_URL}")`, 'status_signer_untrusted'],
-  ])('says why it refuses an entry whose list %s', async (_label, body, reason, code) => {
-    expect(await checked(body)).toStrictEqual({ revoked: true, fresh: false, reason, ...codedAs(code) });
+  ])('names an entry\'s list that %s and says only that it could not be read, logging why', async (_label, body, why, code) => {
+    const { answer, lines } = await logged(() => checked(body));
+    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs(code) });
+    expect(lines).toEqual([`[revocation] ${UNREAD}: revocation: ${why}`]);
   });
 
   it.each<[string, Record<string, unknown> | undefined, string]>([
@@ -75,7 +80,7 @@ describe('the reason the shipped checker gives', () => {
     ['has no encodedList', statusList(owner, [], { credentialSubject: { encodedList: '' } }), 'status-list has no encodedList'],
   ])('names an entry\'s list that %s and says only that it could not be read, logging why', async (_label, body, why) => {
     const { answer, lines } = await logged(() => checked(body));
-    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD, ...codedAs('status_unavailable') });
+    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_unavailable') });
     expect(lines).toEqual([`[revocation] ${UNREAD}: revocation: ${why}`]);
   });
 
@@ -108,7 +113,7 @@ describe('the reason the shipped checker gives', () => {
       now,
     });
     const { answer, lines } = await logged(() => checker(ENTRY));
-    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD, ...codedAs('status_unavailable') });
+    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_unavailable') });
     expect(lines).toEqual([`[revocation] ${UNREAD}: boom\uFFFD${'x'.repeat(1024 - 5)}\u2026`]);
   });
 
@@ -120,7 +125,7 @@ describe('the reason the shipped checker gives', () => {
       now,
     });
     const { answer, lines } = await logged(() => checker(ENTRY));
-    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD, ...codedAs('status_unavailable') });
+    expect(answer).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_unavailable') });
     expect(lines).toEqual([`[revocation] ${UNREAD}: a thrown string`]);
   });
 });
@@ -145,13 +150,15 @@ describe("evaluateRevocationChain and a checker's reason", () => {
     const c = cast();
     const chain = threeHopChain(c, [c.acme, c.agent, c.subAgent]);
     const lists = { ...servedBy(listOf(c.acme), listOf(c.subAgent)), [listUrlOf(c.agent)]: statusList(c.mallory, [], { id: listUrlOf(c.agent) }) };
-    const { evaluated, request, guarded } = await verdicts(chain, lists, { pinned: false });
-    const reason = expect.stringMatching(
-      new RegExp(`^revocation: hop 1 .* fail-closed, subtree invalidated: status list issuer "${c.mallory.did}" `),
-    );
+    const { answer, lines } = await logged(() => verdicts(chain, lists, { pinned: false }));
+    const { evaluated, request, guarded } = answer;
+    const unread = `the status list at "${listUrlOf(c.agent)}" could not be read or checked`;
+    const reason = expect.stringMatching(new RegExp(`^revocation: hop 1 .* fail-closed, subtree invalidated: ${(unread + WITHHELD_SUFFIX).replaceAll('.', '\\.')}$`));
     expect(evaluated.reasons).toEqual([reason]);
     expect(request).toMatchObject({ ok: false, code: 'delegation_revoked', reasons: [reason] });
     expect(guarded).toMatchObject({ ok: false, error: { code: 'delegation_revoked', reasons: [reason] } });
+    // The keeper rule refused the list before its proof was checked, so each path's refusal is the log's alone.
+    expect(lines.filter((line) => line.startsWith(`[revocation] ${unread}: revocation: status list issuer "${c.mallory.did}" `))).toHaveLength(3);
   });
 });
 
@@ -166,13 +173,10 @@ describe("verifyCard and a checker's reason", () => {
       }),
     });
 
-  it('reports why the Card reads as revoked when its list is refused', async () => {
-    expect((await verify(statusList(other))).revocation).toStrictEqual({
-      revoked: true,
-      fresh: false,
-      reason: expect.stringMatching(new RegExp(`^status list issuer "${other.did}" `)),
-      ...codedAs('status_signer_untrusted'),
-    });
+  it('reports that the Card reads as revoked when its list is refused, and logs why', async () => {
+    const { answer, lines } = await logged(() => verify(statusList(other)));
+    expect(answer.revocation).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_signer_untrusted') });
+    expect(lines).toEqual([expect.stringMatching(new RegExp(`^\\[revocation\\] .*: revocation: status list issuer "${other.did}" `))]);
   });
 
   it('reports no reason for a Card whose bit is set, or clear', async () => {

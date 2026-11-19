@@ -1,13 +1,16 @@
 /**
  * When registering an already-registered delegation id is a harmless repeat
- * and when it is a conflict — one rule shared by `DelegationGraphManager` and
- * the memory store's atomic path.
+ * and when it is a conflict, and which parents a delegation may be registered
+ * under: rules shared by `DelegationGraphManager` and the memory store's
+ * atomic path.
  *
  * Internal: not re-exported from the delegation barrel.
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
 import type { DelegationNode } from './delegation-graph.js';
+import { describeValue } from '../utils/describe-value.js';
+import { RefusalError } from '../utils/refusal.js';
 
 /**
  * The first caller-supplied field on which `incoming` differs from the stored
@@ -36,6 +39,38 @@ export function registrationConflict(
     return 'credentialStatus';
   }
   return undefined;
+}
+
+/**
+ * The error that refuses to register a delegation under the parent `parentId`,
+ * stored as `parent`, or `undefined` when it may be registered: an `Error`
+ * when the parent is not stored, and a `RefusalError` of code
+ * `delegation_revoked` when it was removed while revoked, which leaves a
+ * record that holds no children.
+ */
+export function parentRegistrationRefusal(
+  parentId: string,
+  parent: DelegationNode | null | undefined,
+): Error | undefined {
+  if (!parent) return new Error(`Parent delegation not found: ${parentId}`);
+  if (parent.removed === true) {
+    return new RefusalError(
+      'delegation_revoked',
+      `Parent delegation ${describeValue(parentId)} was removed while revoked: register the delegation under one that stands`,
+    );
+  }
+  return undefined;
+}
+
+/**
+ * The refusal to register a delegation again under `id`, the id of one
+ * removed while revoked, whose record keeps the id revoked.
+ */
+export function removedIdRefusal(id: string): RefusalError {
+  return new RefusalError(
+    'delegation_revoked',
+    `Delegation ${describeValue(id)} was removed while revoked, and its id stays revoked: register the delegation under another id`,
+  );
 }
 
 /**

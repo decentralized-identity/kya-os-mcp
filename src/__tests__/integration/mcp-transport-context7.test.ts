@@ -13,7 +13,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { z } from 'zod';
+import * as z from 'zod';
 import { createKyaOsMiddleware } from '../../middleware/with-kya-os.js';
 import { createKyaOsTransport } from '../../middleware/kya-os-transport.js';
 import { withKyaOs } from '../../middleware/with-kya-os-server.js';

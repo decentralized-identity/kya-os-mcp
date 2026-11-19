@@ -7,7 +7,7 @@
  * decided from the DID alone, before any request or DNS lookup (the private-network rule refusing
  * the local name the DID names, a did:key that does not decode), or where the resolution ran out of
  * time, which the presenter sees anyway. Otherwise it says only that the DID could not be resolved,
- * and the operator's log has the rest. The code and whether it is transient are as before. The
+ * and that the operator's log has the rest, which it does, once. The code and whether it is transient are as before. The
  * delegation verifier's Data Integrity and VC-JWT credentials and the cheqd status-list resolver are
  * checked here, the Card proof verifiers in `card/__tests__/signer-did-outage.test.ts`. Every test
  * uses the package's public exports.
@@ -36,6 +36,8 @@ const INTERNAL = 'did:web:jenkins.corp.example';
 const INTERNAL_URL = 'https://jenkins.corp.example/.well-known/did.json';
 const LOCAL = 'did:web:issuer.localhost%3A4101';
 const PRIVATE_ADDRESS = '10.20.30.40';
+/** What a refusal ends with where the operator's log has what it withholds. */
+const LOG_SAYS_WHY = "; the verifier's log says why";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -134,12 +136,14 @@ const LOCAL_REFUSED =
   'to read private hosts in production, give the fetch provider allowPrivateNetworkHosts: true.';
 
 describe('the refusal of a credential whose did:web issuer an internal host answers for', () => {
-  it.each(NETWORK_ANSWERS)('says only that the DID could not be resolved, and logs the rest, for %s', async (_name, resolver, code, logged) => {
+  it.each(NETWORK_ANSWERS)('says only that the DID could not be resolved, and that the log has the rest, for %s', async (_name, resolver, code, logged) => {
     const outcome = await refusals(await resolver());
     for (const result of outcome.results) {
-      expect(result).toMatchObject({ valid: false, reason: `Could not resolve issuer DID: "${INTERNAL}"`, ...codedAs(code) });
+      expect(result).toMatchObject({ valid: false, reason: `Could not resolve issuer DID: "${INTERNAL}"${LOG_SAYS_WHY}`, ...codedAs(code) });
     }
     expect(outcome.logged).toContain(logged);
+    // The library's resolver logged it as it read, so no refusal logs it again.
+    expect(outcome.logged).not.toContain('the DID resolver could not resolve');
   });
 });
 
@@ -199,7 +203,7 @@ describe("the cheqd status-list resolver, when its list issuer's DID cannot be r
 
   it.each(NETWORK_ANSWERS)('says only that it could not be resolved, and logs the rest, for %s', async (_name, didResolver, code, logged) => {
     const outcome = await statusOver(await didResolver());
-    expect(outcome.refusal).toEqual(new Error(`Could not resolve issuer DID ${INTERNAL}`));
+    expect(outcome.refusal).toEqual(new Error(`Could not resolve issuer DID ${INTERNAL}${LOG_SAYS_WHY}`));
     expect(outcome.refusal).toHaveProperty('code', code);
     expect(outcome.logged).toContain(logged);
   });
@@ -212,19 +216,33 @@ describe("the cheqd status-list resolver, when its list issuer's DID cannot be r
 });
 
 describe("a resolver of the host's own that reports why it found no document", () => {
-  it('has its detail shown only where the deadline passed, since the library cannot tell what else it learned from its network', async () => {
-    const reporting = (cause: string): DIDResolver =>
-      ({ resolve: async () => null, lastFailure: () => ({ cause, detail: 'registry answered 503 from 10.0.0.9' }) }) as DIDResolver;
+  const DETAIL = 'registry answered 503 from 10.0.0.9';
+
+  it('has its detail shown only where the deadline passed, and logged where it is not, since the library cannot tell what else it learned from its network', async () => {
+    const reporting = (cause: string): DIDResolver => ({ resolve: async () => null, lastFailure: () => ({ cause, detail: DETAIL }) }) as DIDResolver;
     const bare = `Could not resolve issuer DID: "${INTERNAL}"`;
-    for (const [cause, reason, code] of [
-      ['unavailable', bare, 'did_unavailable'],
-      ['too_large', bare, 'did_invalid'],
-      ['host_refused', bare, 'host_refused'],
-      ['invalid_document', bare, 'did_invalid'],
-      ['deadline_exceeded', `${bare} (registry answered 503 from 10.0.0.9)`, 'deadline_exceeded'],
+    for (const [cause, reason, code, loggedLines] of [
+      ['unavailable', `${bare}${LOG_SAYS_WHY}`, 'did_unavailable', 2],
+      ['too_large', `${bare}${LOG_SAYS_WHY}`, 'did_invalid', 2],
+      ['host_refused', `${bare}${LOG_SAYS_WHY}`, 'host_refused', 2],
+      ['invalid_document', `${bare}${LOG_SAYS_WHY}`, 'did_invalid', 2],
+      ['deadline_exceeded', `${bare} (${DETAIL})`, 'deadline_exceeded', 0],
     ] as const) {
-      const { results } = await refusals(reporting(cause));
+      vi.restoreAllMocks();
+      const { results, logged } = await refusals(reporting(cause));
       expect(results.map((result) => [result.reason, result.code]), cause).toEqual([[reason, code], [reason, code]]);
+      // One line for each refusal, the embedded credential's and the VC-JWT's.
+      expect(logged.split('\n').filter((line) => line.includes(DETAIL)), cause).toEqual(
+        Array.from({ length: loggedLines }, () => `[kya-os] the DID resolver could not resolve "${INTERNAL}": ${DETAIL}`),
+      );
     }
+  });
+
+  it('says the log has why where it gives no cause, and the log says it gave none', async () => {
+    const { results, logged } = await refusals({ resolve: async () => null } as DIDResolver);
+    for (const result of results) {
+      expect(result).toMatchObject({ valid: false, reason: `Could not resolve issuer DID: "${INTERNAL}"${LOG_SAYS_WHY}`, ...codedAs('did_unavailable') });
+    }
+    expect(logged).toContain(`the DID resolver found no document for "${INTERNAL}" and gave no cause`);
   });
 });

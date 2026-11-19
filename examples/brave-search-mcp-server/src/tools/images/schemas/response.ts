@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod';
 
 /**
  * https://api-dashboard.search.brave.com/app/documentation/image-search/responses

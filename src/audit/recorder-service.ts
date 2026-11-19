@@ -1,86 +1,48 @@
-import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
 import { AUDIT_ERROR_CODES, AuditProtocolError } from './errors.js';
-import { hashAuditValue, type AuditHasher, type AuditSigner } from './crypto.js';
+import { hashAuditValue } from './crypto.js';
 import {
   AUDIT_DIGEST_DOMAINS,
   buildAuditRecorderReceiptCore,
-  collectAuditEvidenceRefs,
   digestAuditEntry,
   digestAuditEvidenceManifest,
   digestAuditEvent,
 } from './integrity.js';
-import type { AuditEvidenceProvider, EncryptedEvidenceInput } from './providers/evidence.js';
-import type { AuditJournalProvider } from './providers/journal.js';
 import type { AuditRecorderSubmission } from './providers/recorder-client.js';
+import { sameSigner } from './key-trust.js';
+import { validateEventAuthority, validateSubmissionEnvelope } from './recorder-authority.js';
+import type {
+  AuditRecorderServiceConfig,
+  AuthenticatedAuditSubmissionContext,
+} from './recorder-config.js';
+import { RecorderWriteAheadEvidence } from './recorder-evidence.js';
+import { genesisEvent, validateExistingGenesis } from './recorder-genesis.js';
 import {
   AUDIT_ENTRY_SCHEMA_ID,
-  AUDIT_EVENT_SCHEMA_ID,
   AUDIT_INTEGRITY_SUITE,
   parseAuditEntryCore,
   parseAuditProducerEvent,
-  parseSignedAuditEntry,
 } from './schemas.js';
+import {
+  requireStoredAuditEntry,
+  StoredAuditEntryVerifier,
+  verifyStoredAuditEntry,
+} from './stored-entry.js';
 import type {
   AuditHead,
   AuditLedgerRef,
   AuditProducerEventCoreV1,
   Digest,
-  PartyRef,
-  ProtocolBindingId,
   SignedAuditEntryV1,
 } from './types.js';
 
-export interface AuditClock {
-  now(): number;
-}
-
-export interface AuthenticatedAuditSubmissionContext {
-  producerAuthority: string;
-  tenantAuthority: string;
-  /** Exact authenticated producer binding for non-public or non-DID identifiers. */
-  producerRef?: PartyRef;
-  /** Exact authenticated tenant binding for opaque or commitment-based tenant identifiers. */
-  tenantRef?: PartyRef;
-}
-
-export interface AuditSubmissionAuthorizer {
-  authorize(input: {
-    submission: AuditRecorderSubmission;
-    context: AuthenticatedAuditSubmissionContext;
-  }): Promise<boolean> | boolean;
-}
-
-/**
- * Authoritative epoch-transition port. A successful result means the predecessor terminal
- * checkpoint was verified and the predecessor epoch was atomically sealed against new appends.
- * Implementations must be idempotent for identical transition inputs.
- */
-export interface AuditEpochTransitionGuard {
-  verifyAndSeal(input: {
-    ledgerId: string;
-    previousEpochId: string;
-    nextEpochId: string;
-    previousTerminalCheckpointDigest: Digest;
-  }): Promise<boolean>;
-}
-
-export interface AuditRecorderServiceConfig {
-  ledgerId: string;
-  ledgerEpochId: string;
-  tenantRef: PartyRef;
-  binding: ProtocolBindingId;
-  sourceId: string;
-  journal: AuditJournalProvider;
-  signer: AuditSigner;
-  hasher: AuditHasher;
-  clock: AuditClock;
-  evidence?: AuditEvidenceProvider;
-  authorizer?: AuditSubmissionAuthorizer;
-  previousEpochId?: string;
-  previousTerminalCheckpointDigest?: Digest;
-  epochTransitionGuard?: AuditEpochTransitionGuard;
-  maxAppendConflicts?: number;
-}
+export type {
+  AuditClock,
+  AuditEpochTransitionGuard,
+  AuditRecorderServiceConfig,
+  AuditSubmissionAuthorizer,
+  AuthenticatedAuditSubmissionContext,
+} from './recorder-config.js';
 
 function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
@@ -100,24 +62,6 @@ function higherHead(current: AuditHead | null, candidate: AuditHead | null): Aud
   return BigInt(candidate.sequence) > BigInt(current.sequence) ? candidate : current;
 }
 
-function sameSigner(left: AuditSigner['ref'], right: AuditSigner['ref']): boolean {
-  return left.did === right.did && left.kid === right.kid && left.alg === right.alg;
-}
-
-function sameParty(left: PartyRef, right: PartyRef): boolean {
-  return canonicalizeJson(left) === canonicalizeJson(right);
-}
-
-function authorityMatchesParty(
-  authority: string,
-  boundRef: PartyRef | undefined,
-  claimedRef: PartyRef,
-): boolean {
-  if (boundRef !== undefined) return sameParty(boundRef, claimedRef);
-  return (claimedRef.kind === 'public_did' || claimedRef.kind === 'pairwise_did') &&
-    claimedRef.did === authority;
-}
-
 export class AuditRecorderService {
   private readonly maxAppendConflicts: number;
   private initialization?: Promise<SignedAuditEntryV1>;
@@ -125,8 +69,12 @@ export class AuditRecorderService {
   private committedHead: AuditHead | null = null;
   /** Highest head the journal has reported in a compare-and-append result. */
   private reportedHead: AuditHead | null = null;
-  /** Write-ahead evidence objects held by submissions in flight, by object ID. */
-  private readonly heldEvidence = new Map<string, { holders: number; shared: boolean }>();
+  /** The last journal head whose stored entry verified as one its recorder signed. */
+  private receiptedHead: AuditHead | null = null;
+  /** Write-ahead evidence held, persisted and disposed for submissions in flight. */
+  private readonly writeAhead: RecorderWriteAheadEvidence;
+  /** How a head this recorder did not append is checked before it chains to it. */
+  private readonly storedEntries: StoredAuditEntryVerifier;
 
   constructor(private readonly config: AuditRecorderServiceConfig) {
     if ((config.previousEpochId === undefined) !==
@@ -143,15 +91,17 @@ export class AuditRecorderService {
       );
     }
     this.maxAppendConflicts = config.maxAppendConflicts ?? 256;
+    this.writeAhead = new RecorderWriteAheadEvidence(config);
+    this.storedEntries = new StoredAuditEntryVerifier(config);
   }
 
   async submitAuthenticated(
     submission: AuditRecorderSubmission,
     context: AuthenticatedAuditSubmissionContext,
   ): Promise<SignedAuditEntryV1> {
-    this.validateSubmissionEnvelope(submission, context);
+    validateSubmissionEnvelope(this.config.ledgerId, submission, context);
     const producerEvent = parseAuditProducerEvent(submission.producerEvent);
-    this.validateEventAuthority(producerEvent, context);
+    validateEventAuthority(this.config.tenantRef, producerEvent, context);
     if (this.config.authorizer !== undefined &&
       (await this.config.authorizer.authorize({ submission, context })) !== true) {
       throw new AuditProtocolError(
@@ -176,160 +126,20 @@ export class AuditRecorderService {
     }
 
     await this.ensureInitialized();
-    const held = this.holdEvidence(submission.encryptedEvidence);
+    const held = this.writeAhead.hold(submission.encryptedEvidence);
     try {
-      const stored = await this.persistSubmittedEvidence(
+      const stored = await this.writeAhead.persist(
         submission.encryptedEvidence,
         producerEvent,
       );
       try {
         return await this.appendEvent(producerEvent, context, false, identity);
       } catch (error) {
-        await this.disposeUncommittedEvidence(stored, identity);
+        await this.writeAhead.disposeUncommitted(stored, identity);
         throw error;
       }
     } finally {
-      this.releaseEvidence(held);
-    }
-  }
-
-  /**
-   * Registers this submission as a holder of each evidence object it carries.
-   * An object two submissions hold at once is marked shared for as long as
-   * either still holds it: both may have seen it as new, and the other may
-   * already have committed a reference to it.
-   */
-  private holdEvidence(evidence: readonly EncryptedEvidenceInput[]): string[] {
-    const objectIds = [...new Set(evidence.map((item) => item.ref.objectId))];
-    for (const objectId of objectIds) {
-      const hold = this.heldEvidence.get(objectId);
-      if (hold === undefined) this.heldEvidence.set(objectId, { holders: 1, shared: false });
-      else this.heldEvidence.set(objectId, { holders: hold.holders + 1, shared: true });
-    }
-    return objectIds;
-  }
-
-  private releaseEvidence(objectIds: readonly string[]): void {
-    for (const objectId of objectIds) {
-      const hold = this.heldEvidence.get(objectId)!;
-      if (hold.holders === 1) this.heldEvidence.delete(objectId);
-      else this.heldEvidence.set(objectId, { ...hold, holders: hold.holders - 1 });
-    }
-  }
-
-  /**
-   * Best-effort compensation for write-ahead evidence whose append failed. Only
-   * objects this submission newly stored are disposed: an object that already
-   * existed may be referenced by another committed entry, and so may one that
-   * a concurrent submission held at the same time. They are disposed only
-   * after re-confirming that no committed entry claims this event identity, so
-   * a raced idempotent commit is never stripped of its evidence. Failures here
-   * leave orphans for operator retention tooling.
-   */
-  private async disposeUncommittedEvidence(
-    stored: readonly EncryptedEvidenceInput[],
-    identity: { idempotencyKey: Digest },
-  ): Promise<void> {
-    if (stored.length === 0 || this.config.evidence === undefined) return;
-    try {
-      const committed = await this.config.journal.getByIdempotencyKey(
-        this.config.ledgerId,
-        identity.idempotencyKey,
-      );
-      if (committed !== null) return;
-      for (const item of stored) {
-        if (this.heldEvidence.get(item.ref.objectId)?.shared === true) continue;
-        await this.config.evidence.applyRetention({
-          kind: 'dispose',
-          ref: item.ref,
-          authorizedBy: 'audit-recorder',
-          reason: 'append_failed_uncommitted',
-        });
-      }
-    } catch {
-      // Retaining an orphan is preferable to disposing racing committed evidence.
-    }
-  }
-
-  private validateSubmissionEnvelope(
-    submission: AuditRecorderSubmission,
-    context: AuthenticatedAuditSubmissionContext,
-  ): void {
-    if (!context.producerAuthority || !context.tenantAuthority) {
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.UNAUTHORIZED_SUBMISSION,
-        'Authenticated producer and tenant authority are required',
-      );
-    }
-    if (submission.ledgerId !== this.config.ledgerId) {
-      throw new AuditProtocolError(AUDIT_ERROR_CODES.LEDGER_MISMATCH, 'Wrong audit ledger');
-    }
-  }
-
-  private validateEventAuthority(
-    event: AuditProducerEventCoreV1,
-    context: AuthenticatedAuditSubmissionContext,
-  ): void {
-    if (!authorityMatchesParty(
-      context.producerAuthority,
-      context.producerRef,
-      event.source.producer,
-    )) {
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.UNAUTHORIZED_SUBMISSION,
-        'Event producer does not match the authenticated producer authority',
-      );
-    }
-    if (!sameParty(event.tenantRef, this.config.tenantRef) ||
-      !authorityMatchesParty(context.tenantAuthority, context.tenantRef, event.tenantRef)) {
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.UNAUTHORIZED_SUBMISSION,
-        'Event tenant does not match the authenticated tenant authority',
-      );
-    }
-  }
-
-  /** Persists write-ahead evidence and returns the objects that did not exist before. */
-  private async persistSubmittedEvidence(
-    evidence: readonly EncryptedEvidenceInput[],
-    event: AuditProducerEventCoreV1,
-  ): Promise<EncryptedEvidenceInput[]> {
-    if (evidence.length === 0) return [];
-    if (this.config.evidence === undefined) {
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.EVIDENCE_FAILURE,
-        'Encrypted evidence was submitted but no evidence provider is configured',
-      );
-    }
-    try {
-      const refs = new Map(collectAuditEvidenceRefs(event).map((ref) => [ref.objectId, ref]));
-      const submitted = new Set<string>();
-      const stored: EncryptedEvidenceInput[] = [];
-      for (const item of evidence) {
-        const referenced = refs.get(item.ref.objectId);
-        if (submitted.has(item.ref.objectId) || referenced === undefined ||
-          canonicalizeJson(referenced) !== canonicalizeJson(item.ref)) {
-          throw new AuditProtocolError(
-            AUDIT_ERROR_CODES.EVIDENCE_FAILURE,
-            'Submitted evidence does not exactly match a unique frozen event reference',
-            { objectId: item.ref.objectId },
-          );
-        }
-        submitted.add(item.ref.objectId);
-        const existed = await this.config.evidence.has(item.ref);
-        await this.config.evidence.putIfAbsent(item);
-        if (!existed) stored.push(item);
-      }
-      return stored;
-    } catch (error) {
-      if (error instanceof AuditProtocolError &&
-        error.code === AUDIT_ERROR_CODES.EVIDENCE_FAILURE) throw error;
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.EVIDENCE_FAILURE,
-        'Required evidence could not be persisted',
-        undefined,
-        { cause: error },
-      );
+      this.writeAhead.release(held);
     }
   }
 
@@ -338,7 +148,7 @@ export class AuditRecorderService {
     const existingHead = await this.config.journal.getHead(ledger);
     if (existingHead !== null) {
       const first = this.config.journal.readRange({ ...ledger, limit: 1 });
-      for await (const entry of first) return this.validateExistingGenesis(entry);
+      for await (const entry of first) return validateExistingGenesis(entry, this.config);
       throw new AuditProtocolError(AUDIT_ERROR_CODES.JOURNAL_FAILURE, 'Ledger head exists without genesis');
     }
 
@@ -358,7 +168,7 @@ export class AuditRecorderService {
     }
 
     this.initialization ??= this.appendEvent(
-      this.genesisEvent(),
+      genesisEvent(this.config),
       {
         producerAuthority: this.config.signer.ref.did,
         tenantAuthority: 'audit-recorder',
@@ -370,71 +180,6 @@ export class AuditRecorderService {
       this.initialization = undefined;
     });
     return this.initialization;
-  }
-
-  private validateExistingGenesis(candidate: SignedAuditEntryV1): SignedAuditEntryV1 {
-    try {
-      const entry = parseSignedAuditEntry(candidate);
-      const details = entry.core.event.details;
-      const valid = entry.core.sequence === '0' &&
-        entry.core.previousEntryDigest === null &&
-        entry.core.ledgerId === this.config.ledgerId &&
-        entry.core.ledgerEpochId === this.config.ledgerEpochId &&
-        sameSigner(entry.core.recorder, this.config.signer.ref) &&
-        entry.core.event.eventType === 'ledger.epoch.started' &&
-        entry.core.event.binding === this.config.binding &&
-        entry.core.event.source.sourceId === this.config.sourceId &&
-        entry.core.event.source.producer.kind === 'public_did' &&
-        entry.core.event.source.producer.did === this.config.signer.ref.did &&
-        sameParty(entry.core.event.tenantRef, this.config.tenantRef) &&
-        details.family === 'ledger' &&
-        details.phase === 'epoch_started' &&
-        details.previousEpochId === this.config.previousEpochId &&
-        details.previousTerminalCheckpointDigest ===
-          this.config.previousTerminalCheckpointDigest;
-      if (!valid) throw new Error('Genesis does not match recorder epoch configuration');
-      return entry;
-    } catch (error) {
-      throw new AuditProtocolError(
-        AUDIT_ERROR_CODES.JOURNAL_FAILURE,
-        'Existing ledger genesis does not match the authoritative recorder configuration',
-        undefined,
-        { cause: error },
-      );
-    }
-  }
-
-  private genesisEvent(): AuditProducerEventCoreV1 {
-    return parseAuditProducerEvent({
-      schema: AUDIT_EVENT_SCHEMA_ID,
-      eventId: `genesis:${this.config.ledgerId}:${this.config.ledgerEpochId}`,
-      eventType: 'ledger.epoch.started',
-      eventVersion: '1.0.0',
-      binding: this.config.binding,
-      occurredAt: this.config.clock.now(),
-      tenantRef: this.config.tenantRef,
-      source: {
-        producer: { kind: 'public_did', did: this.config.signer.ref.did },
-        sourceId: this.config.sourceId,
-        sourceSequence: '0',
-      },
-      resource: { kind: 'public_did', did: this.config.signer.ref.did },
-      action: { category: 'ledger.epoch' },
-      outcome: 'succeeded',
-      evidence: [],
-      details: {
-        family: 'ledger',
-        phase: 'epoch_started',
-        ...(this.config.previousEpochId
-          ? {
-              previousEpochId: this.config.previousEpochId,
-              previousTerminalCheckpointDigest:
-                this.config.previousTerminalCheckpointDigest,
-            }
-          : {}),
-      },
-      privacy: { classification: 'internal', retentionClass: 'integrity-ledger' },
-    });
   }
 
   private async appendEvent(
@@ -454,7 +199,7 @@ export class AuditRecorderService {
       // A raced replica genesis differs only in recorder-authored timing, so it
       // resolves through epoch-configuration validation, not content identity.
       return genesis
-        ? this.validateExistingGenesis(duplicate)
+        ? validateExistingGenesis(duplicate, this.config)
         : this.resolveDuplicate(duplicate, eventDigest);
     }
 
@@ -473,9 +218,10 @@ export class AuditRecorderService {
           this.config.ledgerId,
           idempotencyKey,
         );
-        if (raced !== null) return this.validateExistingGenesis(raced);
+        if (raced !== null) return validateExistingGenesis(raced, this.config);
       }
 
+      await this.assertHeadReceipted(head);
       const candidate = await this.buildCandidate(event, eventDigest, head, genesis);
       let result;
       try {
@@ -510,7 +256,7 @@ export class AuditRecorderService {
         // differs only in recorder-authored timing; it is accepted on epoch
         // configuration, never as an event-identity conflict.
         return genesis
-          ? this.validateExistingGenesis(existing)
+          ? validateExistingGenesis(existing, this.config)
           : this.resolveDuplicate(existing, eventDigest);
       }
       this.assertNoRegression(result.actualHead, committed, reported);
@@ -555,6 +301,44 @@ export class AuditRecorderService {
         { committedSequence: committed?.sequence, reportedSequence: actual?.sequence },
       );
     }
+  }
+
+  /**
+   * With `signatures`, the recorder chains only to a head it appended in this
+   * process or one whose stored entry verifies as one it signed for this
+   * ledger epoch. A head read from the journal is otherwise whatever a writer
+   * of the journal store put there, and the next receipt would commit to it.
+   */
+  private async assertHeadReceipted(head: AuditHead | null): Promise<void> {
+    if (head === null || sameHead(head, this.committedHead) || sameHead(head, this.receiptedHead)) return;
+    const verification = await this.storedEntries.verification();
+    if (verification === undefined) return;
+    const ledger = this.ledgerRef();
+    // The recorder of an epoch signs every entry in it, its genesis included,
+    // so an entry under another key is not one it can chain to.
+    await requireStoredAuditEntry(head.sequence, async () => {
+      const entry = await this.entryAt(ledger, head.sequence);
+      return entry !== undefined &&
+        entry.entryDigest === head.entryDigest &&
+        sameSigner(entry.core.recorder, this.config.signer.ref) &&
+        verifyStoredAuditEntry(entry, ledger, verification);
+    });
+    this.receiptedHead = head;
+  }
+
+  /** The stored entry at `sequence`, if the journal returns that one first from just below it. */
+  private async entryAt(
+    ledger: AuditLedgerRef,
+    sequence: string,
+  ): Promise<SignedAuditEntryV1 | undefined> {
+    const position = BigInt(sequence);
+    const range = this.config.journal.readRange({
+      ...ledger,
+      ...(position === 0n ? {} : { afterSequence: String(position - 1n) }),
+      limit: 1,
+    });
+    for await (const entry of range) return entry.core.sequence === sequence ? entry : undefined;
+    return undefined;
   }
 
   private async identifyEvent(

@@ -38,6 +38,17 @@ hold their reading to as well.
 Every status-list vector is independently checked by status_list.py: authority,
 both Ed25519 proofs, the list's validity window, bounded gzip decoding and the
 strict indexed bit read.
+Of the entity-card vectors that turn on a hop's commitment to its parent
+(SPEC.md 6.10), each chain is read here too: the parent digest a hop states
+must be the 7.8 digest of the hop before it, and the root states none. The
+`delegation-chain/parent-digest-*` vectors are read the same way, for the same
+commitment in the base profile (SPEC.md 6.2).
+Every `signed-proof/request-binding-*` vector is checked by request_binding.py:
+a holder's request proof is held as a response proof is, and then to the
+delegation its call presented, by the statement of the protected header its
+signature covers (SPEC.md 7.8). A proof that names the credential presented
+must be bound, and one that names another, states a malformed value, or had its
+statement changed after signing must each fail for that reason and no other.
 
 Zero external dependencies: SHA-256 via `hashlib`, JCS via an exact RFC 8785 serializer
 (ECMAScript number formatting and UTF-16 code-unit object-key ordering, covering the full admitted
@@ -53,10 +64,11 @@ name. What it checks with is in the modules beside it, one job to each:
     digests.py           the `sha256:` digest form, and the domain-separated digest
     card_proof.py        what the `org.kya-os/proof.v1` signatures cover
     audit_merkle.py      the RFC 9162 Merkle root, and its inclusion and consistency proofs
-    signed_form.py       a credential's signed form, and the credential and chain digests (7.8)
+    signed_form.py       a credential's signed form, the credential and chain digests (7.8), and a hop's parent digest (6.2, 6.10)
     delegation_ref.py    the id a credential shows, and the reference it goes by (7.8)
     response_proof.py    a response proof, and the request and response it binds (7.3, 7.4)
     chain_binding.py     how a response proof stands against what its verifier holds (7.8)
+    request_binding.py   how a holder's request proof stands against the delegation presented (7.8)
     delegation_cases.py  the cases the readings of 7.8 are held to beyond the vectors
     proof_cases.py       the cases a response proof is held to beyond the vectors
     status_list.py       a status list's authority, its proofs, its window and the bit an entry indexes
@@ -87,7 +99,9 @@ from digests import domain_digest
 from ed25519 import ed25519_verify
 from proof_cases import forgeries_hold, proof_cases_hold, signer_holds
 from proof_key import verify_input as verify_proof_key_input
+from request_binding import request_binding
 from response_proof import jws_segment_json, proof_of_its_form
+from signed_form import credential_digest, parent_commitment
 from status_list import verify_input as verify_status_input
 from strict_json import jcs, read_json
 
@@ -209,6 +223,10 @@ def main() -> int:
                     binding("chain-no-signed-form") == "no-signed-form"))
     results.append(("proof that binds a chain and names another of its credentials",
                     binding("ref-substituted") == "misnamed"))
+    results.append(("proof that names its chain is no binding for another delegation of the same agent",
+                    binding("chain-other-delegation") == "mismatch"))
+    results.append(("refusal of a presented credential that does not verify binds that credential alone",
+                    binding("chain-refused-leaf-alone") == "bound"))
     results.append(("credential id too long to record is named by its SHA-256",
                     binding("ref-digest-form") == "bound"))
     results.append(("credential nested 64 levels deep, as deep as one may be, is bound",
@@ -271,6 +289,90 @@ def main() -> int:
     results.append(("every signed-proof vector has the verdict it expects",
                     all((chain_binding(vector["input"]) in ("bound", "no-chain")) == (vector["expected"] == "pass")
                         for vector in proof_file["vectors"])))
+
+    # A hop's commitment to its parent (SPEC.md 6.10): the 7.8 digest of the hop before it, and
+    # none on the root. The card and the rest of its chain's rules are the TypeScript reference's.
+    card_file = read_vector_file(HERE / "vectors" / "entity-card.json")
+
+    def hop_chain(name: str) -> list:
+        return vector_by_id(card_file, "entity-card/" + name)["accountability"]["chain"]
+
+    committed = next(vector for vector in card_file["vectors"] if vector["id"] == "entity-card/hop-parent-digest")
+    committed_root = hop_chain("hop-parent-digest")[0]
+    results.append(("hop's parent digest is the 7.8 digest of a root whose 89-character proofValue is read as base64",
+                    parent_commitment(hop_chain("hop-parent-digest")) == "committed" and
+                    len(committed_root["proof"]["proofValue"]) == 89 and
+                    credential_digest(committed_root) in committed["description"]))
+    results.append(("hop under a root issued again under the same id states another root's digest",
+                    parent_commitment(hop_chain("hop-parent-digest-reissued-root")) == "mismatch"))
+    results.append(("root that states a parent digest",
+                    parent_commitment(hop_chain("root-states-parent-digest")) == "root-states"))
+    results.append(("hop that states no parent digest is held to none",
+                    parent_commitment(hop_chain("hop-parent-digest-absent")) == "uncommitted"))
+    results.append(("root that states a parent digest as null states one",
+                    parent_commitment(hop_chain("root-states-parent-digest-null")) == "root-states"))
+    results.append(("hop that states a parent digest as null states one that is not its parent's",
+                    parent_commitment(hop_chain("hop-parent-digest-null")) == "mismatch"))
+
+    # The same commitment in the base profile (SPEC.md 6.2), where a credential holds the member in
+    # the delegation record its subject carries: each chain is its ancestors, root first, and its leaf.
+    commitment_file = read_vector_file(HERE / "vectors" / "delegation-chain-parent-commitment.json")
+
+    def base_chain(name: str) -> list:
+        chain = vector_by_id(commitment_file, "delegation-chain/parent-digest-" + name)
+        return [*chain.get("ancestors", []), chain["leaf"]]
+
+    base_committed = next(vector for vector in commitment_file["vectors"]
+                          if vector["id"] == "delegation-chain/parent-digest-committed")
+    results.append(("base profile re-delegation's parent digest is the 7.8 digest of its parent",
+                    parent_commitment(base_chain("committed")) == "committed" and
+                    credential_digest(base_chain("committed")[0]) in base_committed["description"]))
+    results.append(("base profile re-delegation under a parent issued again under the same id states another parent's digest",
+                    parent_commitment(base_chain("reissued-parent")) == "mismatch"))
+    results.append(("base profile re-delegation that states no parent digest is held to none",
+                    parent_commitment(base_chain("absent")) == "uncommitted"))
+    results.append(("base profile re-delegation that states a parent digest as null states one that is not its parent's",
+                    parent_commitment(base_chain("null")) == "mismatch"))
+    results.append(("base profile delegation with no parent that states a parent digest",
+                    parent_commitment(base_chain("on-root")) == "root-states"))
+
+    # A holder's request proof, held to the delegation its call presented (SPEC.md 7.8): the
+    # statement of the protected header its signature covers, and the names its payload signs.
+    request_file = read_vector_file(HERE / "vectors" / "signed-proof-request-binding.json")
+
+    def request(name: str, requires=None) -> str:
+        return request_binding(vector_by_id(request_file, "signed-proof/request-binding-" + name), requires)
+
+    results.append(("request proof that states the digest of the credential its call presents, an object or a VC-JWT",
+                    request("named") == "bound" and request("named-vc-jwt") == "bound"))
+    results.append(("request proof beside a copy of the credential it names that differs in nothing signed",
+                    request("reserialized") == "bound"))
+    results.append(("request proof beside another delegation of its holder, one issued again under the same id, or the same one in another form",
+                    all(request(name) == "mismatch" for name in (
+                        "other-delegation", "reissued-under-same-id", "other-form"))))
+    results.append(("request proof that states none, for a call that presents no delegation",
+                    request("none") == "bound"))
+    results.append(("request proof that names no credential is refused by a verifier that requires one, and bound by one that does not",
+                    request("none-beside-delegation") == "none-stated"
+                    and request("unnamed-beside-delegation") == "unnamed"
+                    and request("unnamed") == "unnamed"
+                    and all(request(name, requires=False) == "bound" for name in (
+                        "none-beside-delegation", "unnamed-beside-delegation", "unnamed"))))
+    results.append(("statement that is neither a credential digest nor none is malformed",
+                    all(request(name) == "malformed" for name in (
+                        "statement-not-lowercase", "statement-not-a-string"))))
+    results.append(("statement changed or removed after signing breaks the signature",
+                    all(request(name) == "invalid" for name in ("statement-altered", "statement-stripped"))))
+    results.append(("of statements that share the parameter's name the last is read",
+                    request("statement-duplicated") == "mismatch"))
+    results.append(("request proof that also signs the delegationRef of another credential",
+                    request("payload-names-another") == "misnamed"))
+    # A vector that does not ask for a verifier that requires naming has the same verdict under one.
+    results.append(("every request-binding vector has the verdict it expects, and one that names no policy has it under both",
+                    all((request_binding(vector["input"]) == "bound") == (vector["expected"] == "pass")
+                        and ("requestBinding" in vector["input"]["expected"]
+                             or request_binding(vector["input"], requires=True) == request_binding(vector["input"], requires=False))
+                        for vector in request_file["vectors"])))
 
     relationship_file = read_vector_file(HERE / "vectors" / "signed-proof-key-relationship.json")
     results.append(("every detached proof key-relationship vector has the verdict it expects",

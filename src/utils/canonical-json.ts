@@ -249,3 +249,15 @@ export function canonicalizeJson(value: unknown): string {
 export function canonicalizeJsonBytes(value: unknown): Uint8Array {
   return encoder.encode(canonicalizeJson(value));
 }
+
+/**
+ * Whether `a` and `b` are one JSON value, as RFC 8785 writes each: member order does not count, and
+ * a value that has no canonical form equals nothing, itself included, so a comparison never throws.
+ */
+export function sameCanonicalJson(a: unknown, b: unknown): boolean {
+  try {
+    return canonicalizeJson(a) === canonicalizeJson(b);
+  } catch {
+    return false;
+  }
+}

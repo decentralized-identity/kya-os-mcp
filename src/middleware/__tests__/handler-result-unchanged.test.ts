@@ -9,7 +9,7 @@
  * reach.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
+import * as z from 'zod';
 import { McpServer as McpServer2, createMcpHandler } from '@modelcontextprotocol/server';
 import { Client as Client2, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { McpServer as McpServer1 } from '@modelcontextprotocol/sdk/server/mcp.js';

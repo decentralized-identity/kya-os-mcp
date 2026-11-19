@@ -36,10 +36,30 @@ A fixture prints `PASS <fixture>: <what it showed>`, or one `FAIL <fixture>: <ca
 | `card-revocation-checker` | `verifyCard` with and without a `statusListChecker` built from `createRevocationChecker`: a Card that declares a revocation entry is refused as `configuration_error` when no checker is given, and a Card that declares none needs no checker. |
 | `window-dates` | `createRevocationChecker`, `CheqdStatusListResolver` and `requireDelegation` over `RuntimeFetchProvider` and SafeFetch: a list or hop bound with no time zone, or not RFC 3339, is refused alike under `TZ=UTC` and `TZ=America/Chicago`, and one a few seconds outside its window is read within the clock tolerance. |
 | `checkpoint-conflicts` | An on-demand checkpoint endpoint over `AuditRecorderService` and `AuditCheckpointBuilder`, with two signer processes sharing one checkpoint store: it answers success for a lost race and failure for a forked journal, told apart by `isLostCheckpointRace`. |
-| `status-entry-owners` | `DelegationGraphManager` built with `statusEntryOwners`, over entries from `allocateStatusEntry(purpose, { delegationId })`, and `CascadingRevocationManager`: a re-delegation carrying another's entry is refused, a pre-upgrade row with one is revoked in the graph alone through a caught `StatusEntryUnchangedError`, and a removed delegation's entry stays retired. |
+| `status-entry-owners` | `DelegationGraphManager` built with `statusEntryOwners`, over entries from `allocateStatusEntry(purpose, { delegationId })`, and `CascadingRevocationManager`: a re-delegation carrying another's entry is refused, a pre-upgrade row with one is revoked in the graph alone through a caught `StatusEntryUnchangedError`, and a removed delegation's entry stays retired, while one removed as revoked keeps its id revoked. |
 | `status-list-replicas` | Two issuing replicas, each with its own `StatusList2021Manager`, over the adopter's own status-list table that implements `ConditionalStatusListStorageProvider` with etags from a sequence that never resets: revocations made at the same moment all reach the published list after at least one refused write, a write refused every time throws an error `isStatusListWriteConflict` knows, and the same table without the conditional write loses one and warns once. |
+| `request-proof-binding` | `withKyaOs` with `delegation.holderBinding: 'enforce'` and a client that signs with `generateRequestProof` from the arguments it sends: the proof names the delegation among them, so another delegation of the agent put in its place is refused with no further setting; the `delegation` input names one attached after signing; a proof that names none, as an earlier client makes it, runs under the default and is refused under `delegation.requestBinding: 'require'`. |
+| `bitstring-status-lists` | `StatusList2021Manager` built with `format: 'BitstringStatusList'`, `validityPeriodMs` and `ttl`, signing each list `eddsa-jcs-2022` through its signing function: the `BitstringStatusListEntry` it allocates goes on an Entity Card hop as written, `requireDelegation` with `createRevocationChecker` and `createStatusListProofVerifier` passes the call and refuses it as `delegation_revoked` once the issuer revokes, and the same manager goes on revoking on the StatusList2021 list published before, which stays a `StatusList2021Credential`; an entry on a list of the other format, and a `ttl` without the W3C format, are refused with a `TypeError`. |
 
 A case whose name starts with `control:` checks the setup the other cases rely on, so a failure beside a passing control is the library's, not the fixture's.
+
+## Released verifiers
+
+```sh
+pnpm test:released-verifiers
+```
+
+A request proof states the delegation its call presents in its JWS protected header (SPEC.md §7.8), and a server that has not upgraded must go on verifying the proofs an upgraded client signs.
+This measures that against the verifiers themselves.
+It builds and packs the library, installs the tarball and each released version into projects of their own in a fresh temporary directory, makes session request proofs and card proofs with this version, and has every installed version verify four of each: one made without the statement, as the control, one as the generator signs it, and that one with its statement swapped for another digest and stripped after signing.
+A verifier must give the proof as signed the verdict it gives the control, and refuse a statement changed after signing, since the header is part of what is signed.
+It prints one table for each kind of proof and exits 1 when a verdict is not the expected one.
+With no version named it measures 1.11.0, 1.16.0, 1.22.0 and 1.25.0; name others to measure those, as in `pnpm test:released-verifiers 1.23.0 1.24.0`.
+`--keep` and `--no-build` are as above.
+The control for a card proof is signed by a signer that leaves the statement out, so the run prints the warning such a signer gets.
+
+A run installs published versions from the npm registry, so it is a measurement to run by hand before a release that changes what a proof carries, and is no part of `pnpm test` or of CI.
+`UPGRADING.md` records the results for the release that added the statement.
 
 ## Adding a fixture
 

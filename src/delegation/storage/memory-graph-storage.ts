@@ -13,7 +13,7 @@ import type {
   DelegationNode,
   StatusEntryIndexedGraphStorageProvider,
 } from '../delegation-graph.js';
-import { registrationConflict } from '../delegation-registration.js';
+import { parentRegistrationRefusal, registrationConflict } from '../delegation-registration.js';
 import { entryKey, readableStatusEntry } from '../delegation-status-entry.js';
 
 /**
@@ -68,9 +68,8 @@ export class MemoryDelegationGraphStorage
       throw new Error(`Delegation ${node.id} is already registered with a different ${conflict}`);
     }
     const parent = node.parentId === null ? null : this.nodes.get(node.parentId);
-    if (node.parentId !== null && parent === undefined) {
-      throw new Error(`Parent delegation not found: ${node.parentId}`);
-    }
+    const refused = node.parentId === null ? undefined : parentRegistrationRefusal(node.parentId, parent);
+    if (refused !== undefined) throw refused;
     const storedNode = { ...node, children: [...node.children] };
     if (parent !== null && parent !== undefined) {
       const storedParent = {

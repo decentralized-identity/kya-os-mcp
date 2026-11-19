@@ -117,6 +117,22 @@ export interface SignedProofInput {
      * `allowed` when `delegationChain` is present, and none otherwise.
      */
     outcome?: 'allowed' | 'denied' | 'step_up_required' | 'needs_authorization';
+    /**
+     * OPTIONAL (suite 1.13.0 or later). Present, the proof is a holder's request proof (SPEC.md
+     * §7.8), signed by the key `publicKeyJwk` gives, and this is the delegation credential its call
+     * presented, as received: an object (with its `proof`), a compact VC-JWT string, or `null` for
+     * a call that presented none. The proof MUST be rejected when its protected header states,
+     * under `org.kya-os/delegation`, another credential than this one, or a value that is neither a
+     * credential digest nor `none`, and when a `delegationRef` it signs is not this credential's.
+     */
+    presentedDelegation?: unknown;
+    /**
+     * OPTIONAL (suite 1.13.0 or later), with `presentedDelegation`: `require` for a verifier that
+     * refuses a proof that does not name the credential presented, as SPEC.md §7.8 says a verifier
+     * SHOULD. Such a verifier MUST reject a proof that states nothing, and one that states `none`
+     * beside a credential. Absent, the vector's verdict is the same whether or not it does.
+     */
+    requestBinding?: 'require';
   };
 }
 

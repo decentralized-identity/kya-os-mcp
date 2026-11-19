@@ -8,7 +8,7 @@
  * found.
  */
 
-import { delegationCredentialDigest, type ReceivedCredential } from "../delegation/chain-digest.js";
+import { delegationChainDigest, delegationCredentialDigest, type ReceivedCredential } from "../delegation/chain-digest.js";
 import { delegationRefOf } from "../delegation/delegation-ref.js";
 import { NoSignedFormError } from "../delegation/signed-form.js";
 import type { AuthorizationEvidence, Digest } from "../audit/types.js";
@@ -87,6 +87,13 @@ export interface DelegationDescriber {
    *   be allowed. It never throws for a refusal.
    */
   describe(presentation: Presentation): Promise<DelegationRecords>;
+  /**
+   * The digest of the chain a verified presentation was evaluated as (SPEC
+   * §7.8): its ancestors, root first, then the presented credential. It is
+   * made only when asked, as for a call whose holder proof names a chain, so
+   * a server that records no chain digests nothing more for any other call.
+   */
+  chainDigest(presentation: Pick<Presentation, "presented" | "ancestors">): Promise<Digest>;
 }
 
 /** What was digested of a presentation. */
@@ -189,5 +196,9 @@ export function createDelegationDescriber(
     });
   }
 
-  return { describe };
+  async function chainDigest({ presented, ancestors }: Pick<Presentation, "presented" | "ancestors">): Promise<Digest> {
+    return delegationChainDigest(await chainDigestsOf(ancestors, await digestOf(presented)), hash);
+  }
+
+  return { describe, chainDigest };
 }

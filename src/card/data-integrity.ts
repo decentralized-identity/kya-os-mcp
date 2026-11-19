@@ -21,6 +21,7 @@ import { resolveExplained, unresolvedIssuer, type ExplainedResolution } from '..
 import { logger } from '../logging/index.js';
 import { DeadlineExceededError } from '../utils/deadline.js';
 import { RefusalError, refusalCodeOf } from '../utils/refusal.js';
+import { loggedWords, WITHHELD_SUFFIX } from '../utils/thrown-words.js';
 import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
 import { isRecord, issuerOf } from '../utils/guards.js';
 import { base58Decode, base58Encode } from '../utils/base58.js';
@@ -150,7 +151,7 @@ export async function verifyEddsaJcs2022Proof(
  * not resolve issuer DID`, with the code of the cause the resolver reports and its detail where a
  * refusal shows it, or `did_invalid` when the limits refused it. A resolver that throws is
  * `did_unavailable`, unless its error carries a code of its own, and its words are logged, never
- * shown; a deadline that passes rejects as it does.
+ * shown, the refusal saying the log has them; a deadline that passes rejects as it does.
  */
 async function issuerDocument(
   didResolver: DIDResolver, did: string, key: string, timeoutMs: number | undefined,
@@ -161,8 +162,8 @@ async function issuerDocument(
     resolved = await resolveExplained(didResolver, did, key, timeoutMs);
   } catch (error) {
     if (error instanceof RefusalError || error instanceof DeadlineExceededError) throw error;
-    logger.warn(`[eddsa-jcs-2022] Resolving ${did} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    throw new RefusalError(refusalCodeOf(error, 'did_unavailable'), unresolved(''));
+    logger.warn(`[eddsa-jcs-2022] Resolving ${did} failed: ${loggedWords(error)}`);
+    throw new RefusalError(refusalCodeOf(error, 'did_unavailable'), unresolved(WITHHELD_SUFFIX));
   }
   if (resolved.document === null) throw new RefusalError(resolved.code, unresolved(resolved.why));
   return resolved.document;

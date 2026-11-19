@@ -15,7 +15,15 @@ import type { StatusEntryOwner } from '../status-entry-owner.js';
 import { isStatusListWriteConflict, type StatusList2021Manager } from '../statuslist-manager.js';
 import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js';
 import { MemoryStatusListStorage } from '../storage/memory-statuslist-storage.js';
-import { ENTRY, LIST, REGISTRATION_REFUSED, leftUnchanged, refusal } from './helpers/status-entry-operator.js';
+import {
+  ENTRY,
+  LIST,
+  REGISTRATION_REFUSED,
+  REMOVED_WHILE_REVOKED,
+  leftUnchanged,
+  refusal,
+  rejectionMessage,
+} from './helpers/status-entry-operator.js';
 import { proofOver, replica, signedOverItself } from './helpers/status-list-writers.js';
 
 /**
@@ -235,7 +243,10 @@ describe('revoking, restoring and retiring entries through replicas of one store
     expect(bits).toEqual({ a: true, b: false, c: true });
     expect(await signedOverItself(statusStore, LIST)).toBe(true);
     expect(await reader.getStatusEntryOwner(entries.get('c')!)).toEqual({ delegationId: 'c', retired: true });
-    await expectNoneRegisteredWith(wiredGraph(reader, nodes), entries.get('c')!, ['c', 'other']);
+    const readerGraph = wiredGraph(reader, nodes);
+    await expectNoneRegisteredWith(readerGraph, entries.get('c')!, ['other']);
+    // c read as revoked when it was removed, so it left a revoked record that refuses its id.
+    expect(await rejectionMessage(readerGraph.registerDelegation(params('c', entries.get('c')!)))).toBe(REMOVED_WHILE_REVOKED('c'));
   });
 
   it('revokes the rest of a subtree when one entry is refused every time, and a second call sets that entry', async () => {

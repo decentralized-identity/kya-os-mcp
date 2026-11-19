@@ -6,7 +6,8 @@
  * submits a re-delegation carrying another delegation's entry is refused when it is registered,
  * and a delegation the graph held from before the upgrade, carrying another's entry, is revoked in
  * the graph while that entry is left alone, which the operator reads from the
- * `StatusEntryUnchangedError` it catches.
+ * `StatusEntryUnchangedError` it catches. A removed delegation's entry stays retired, even for its
+ * own id, and one removed while it read as revoked keeps its id revoked.
  */
 import assert from 'node:assert/strict';
 import {
@@ -117,10 +118,31 @@ await runCases('status-entry-owners', "each delegation's status entry is registe
   {
     name: 'a removed delegation leaves its entry retired, even for its own id',
     run: async () => {
+      const liveEntry = await issue('live', 'root');
       await graph.removeDelegation('legacy');
       await graph.removeDelegation('agent');
+      await graph.removeDelegation('live');
       assert.deepEqual(await statusList.getStatusEntryOwner(rootEntry), { delegationId: 'root', retired: false });
       assert.deepEqual(await statusList.getStatusEntryOwner(agentEntry), { delegationId: 'agent', retired: true });
+      assert.deepEqual(await statusList.getStatusEntryOwner(liveEntry), { delegationId: 'live', retired: true });
+      // A delegation removed while live leaves no record, so its id registers again, but not with its entry.
+      const refused = await graph
+        .registerDelegation({
+          id: 'live',
+          parentId: 'root',
+          issuerDid: 'did:web:root.example',
+          subjectDid: 'did:web:live.example',
+          credentialStatus: { ...liveEntry },
+        })
+        .then(() => undefined, (error: unknown) => error);
+      assert.ok(refused instanceof RefusalError, `expected a RefusalError, got ${String(refused)}`);
+      assert.equal(refused.code, 'delegation_malformed');
+    },
+  },
+  {
+    name: 'a delegation removed while revoked keeps its id revoked',
+    run: async () => {
+      // 'agent' was revoked with 'team', and removed above: its id is refused before its entry is read.
       const refused = await graph
         .registerDelegation({
           id: 'agent',
@@ -131,6 +153,9 @@ await runCases('status-entry-owners', "each delegation's status entry is registe
         })
         .then(() => undefined, (error: unknown) => error);
       assert.ok(refused instanceof RefusalError, `expected a RefusalError, got ${String(refused)}`);
+      assert.equal(refused.code, 'delegation_revoked');
+      assert.match(refused.message, /^Delegation "agent" was removed while revoked, and its id stays revoked/);
+      assert.equal((await revocation.isRevoked('agent')).revoked, true);
     },
   },
 ]);

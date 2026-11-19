@@ -21,12 +21,11 @@ import { toDelegationChainMeta, verifyRequestDelegation } from '../request-deleg
 import { createRevocationChecker, type RevocationCheckerDeps } from '../revocation.js';
 import type { EntityCard } from '../schema.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
-import { verifyCard, type AccountabilityVerifier, type VerifyCardDeps } from '../verify.js';
+import { verifyCard, type AccountabilityVerifier, type VerifyCardDeps, type VerifyCardResult } from '../verify.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
 import {
   hop,
-  identity,
   published,
   RESOURCE,
   serveAt,
@@ -34,16 +33,14 @@ import {
   statusList,
   type TestIdentity,
   now,
+  webIdentity,
 } from './signed-chain-helpers.js';
 import { moveBinding, nameSigner } from './status-list-paths.js';
 import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
+import { unreadStatusList, WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const CARDS_URL = 'https://example.com/status/cards';
-
-/** An Ed25519 key published as the verification method `<did>#key-1` of a did:web DID. */
-function webIdentity(did: string): TestIdentity {
-  return { ...identity(), did, method: `${did}#key-1` };
-}
 
 const entity = webIdentity('did:web:example.com:agents:acme-pay');
 const responsibleParty = webIdentity('did:web:api.example');
@@ -135,6 +132,18 @@ const READ_CLEAR = { revoked: false, fresh: true };
 const READ_REVOKED = { revoked: true, fresh: true, ...BIT_SET };
 const REFUSED = { revoked: true, fresh: false, reason: expect.any(String) as string, ...ANY_CODE };
 
+/**
+ * `run`'s verdict, once it is seen to read the Card's list as one the keeper rule refuses: the
+ * operator's log says `detail`, and the verdict only that the list could not be read or checked,
+ * since the rule quotes the list before its proof is checked.
+ */
+async function expectListRefused(run: () => Promise<VerifyCardResult>, detail: string): Promise<VerifyCardResult> {
+  const { result, logged } = await withWarnings(run);
+  expect(result.revocation).toStrictEqual({ revoked: true, fresh: false, reason: `${unreadStatusList(CARDS_URL)}${WITHHELD_SUFFIX}`, ...codedAs('status_signer_untrusted') });
+  expect(logged).toContain(detail);
+  return result;
+}
+
 describe("the Card's verified responsible party", () => {
   it.each(['false', 1, {}, null])('does not grant authority for a malformed seam verdict: %j', async (verified) => {
     const accountabilityVerifier = async () => ({ verified }) as unknown as Awaited<ReturnType<AccountabilityVerifier>>;
@@ -197,29 +206,21 @@ describe("the Card's verified responsible party", () => {
   });
 
   it("signs a list that is refused at the Card's own list URL, which nothing binds to it, though it is verified", async () => {
-    const result = await verifyWith(cardsList(responsibleParty));
+    const result = await expectListRefused(
+      () => verifyWith(cardsList(responsibleParty)),
+      `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
+        nameSigner(responsibleParty.did, CARDS_URL),
+    );
     expect(result.accountability).toMatchObject({ responsibleParty: responsibleParty.did, verified: true });
     expect(result).toMatchObject({ ok: false });
-    expect(result.revocation).toStrictEqual({
-      revoked: true,
-      fresh: false,
-      reason:
-        `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
-        nameSigner(responsibleParty.did, CARDS_URL),
-      ...codedAs('status_signer_untrusted'),
-    });
   });
 
   it("keeps the Entity's own list out of a URL the configuration binds to it", async () => {
-    const result = await verifyWith(cardsList(entity), {}, boundToParty);
-    expect(result.revocation).toStrictEqual({
-      revoked: true,
-      fresh: false,
-      reason:
-        `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the issuer statusListIssuers binds this URL to` +
+    await expectListRefused(
+      () => verifyWith(cardsList(entity), {}, boundToParty),
+      `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the issuer statusListIssuers binds this URL to` +
         moveBinding(entity.did, CARDS_URL),
-      ...codedAs('status_signer_untrusted'),
-    });
+    );
   });
 
   it('signs a list that is refused when it states no id', async () => {
@@ -233,14 +234,11 @@ describe("the Card's verified responsible party", () => {
     expect(clear.accountability).toMatchObject({ responsibleParty: responsibleParty.did, verified: true, rootStatusList: CARDS_URL });
     expect(clear).toMatchObject({ ok: true, revocation: READ_CLEAR });
     expect(await verifyWith(cardsList(responsibleParty, [3]), reported)).toMatchObject({ ok: false, revocation: READ_REVOKED });
-    expect((await verifyWith(cardsList(entity), reported)).revocation).toStrictEqual({
-      revoked: true,
-      fresh: false,
-      reason:
-        `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the pinned root whose own credential names it` +
+    await expectListRefused(
+      () => verifyWith(cardsList(entity), reported),
+      `status list issuer "${entity.did}" does not keep this list's URL: "${responsibleParty.did}" does, as the pinned root whose own credential names it` +
         nameSigner(entity.did, CARDS_URL),
-      ...codedAs('status_signer_untrusted'),
-    });
+    );
     expect(await verifyWith(cardsList(responsibleParty, [], { statesId: false }), reported)).toMatchObject({ ok: false, revocation: REFUSED });
   });
 
@@ -253,16 +251,12 @@ describe("the Card's verified responsible party", () => {
     ['an object', { url: CARDS_URL }],
     ['null', null],
   ])("keeps no list at the Card's own list URL when accountability reports %s", async (_label, rootStatusList) => {
-    const result = await verifyWith(cardsList(responsibleParty), { accountabilityVerifier: reportingRootList(rootStatusList) });
-    expect(result.accountability).toMatchObject({ verified: true });
-    expect(result.revocation).toStrictEqual({
-      revoked: true,
-      fresh: false,
-      reason:
-        `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
+    const result = await expectListRefused(
+      () => verifyWith(cardsList(responsibleParty), { accountabilityVerifier: reportingRootList(rootStatusList) }),
+      `status list issuer "${responsibleParty.did}" does not keep this list's URL: "${entity.did}" does, as the issuer of the credential` +
         nameSigner(responsibleParty.did, CARDS_URL),
-      ...codedAs('status_signer_untrusted'),
-    });
+    );
+    expect(result.accountability).toMatchObject({ verified: true });
   });
 
   it('lets the configuration decide over the URL accountability reports', async () => {

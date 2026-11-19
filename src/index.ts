@@ -48,6 +48,8 @@ export type {
   DelegationStatus,
   CredentialStatus,
   StatusList2021Credential,
+  BitstringStatusListCredential,
+  StatusListCredential,
   Proof,
   HandshakeRequest,
   SessionContext,
@@ -131,10 +133,12 @@ export { acceptStatusListValidity } from './utils/statuslist-validity.js';
 
 export {
   DelegationGraphManager,
+  SubtreeRemovalError,
   createDelegationGraph,
   statusEntryKey,
   type DelegationNode,
   type DelegationGraphOptions,
+  type RemoveDelegationOptions,
   type DelegationGraphStorageProvider,
   type StatusEntryClaim,
   type StatusEntryIndexedGraphStorageProvider,
@@ -147,6 +151,8 @@ export {
   isStatusListWriteConflict,
   type ConditionalStatusListStorageProvider,
   type StatusList2021ManagerOptions,
+  type StatusListEntryOf,
+  type StatusListFormat,
   type StatusListStorageProvider,
   type StatusListIdentityProvider,
   type StatusListWriteRetryOptions,
@@ -161,10 +167,13 @@ export type {
 
 export {
   CascadingRevocationManager,
+  RevocationStalledError,
   StatusEntryUnchangedError,
   createCascadingRevocationManager,
+  type RevocationReports,
   type StatusEntryUnchangedReason,
   type UnchangedStatusEntry,
+  type UnrecordedRevocation,
   type RevocationEvent,
   type RevocationHook,
   type CascadingRevocationOptions,
@@ -220,6 +229,25 @@ export {
   type HolderBindingResult,
   type HolderBindingStatus,
 } from './delegation/holder-binding.js';
+
+export {
+  verifyDelegatedCallProof,
+  admitsRetainedDelegation,
+  type VerifyDelegatedCallProofInput,
+  type DelegatedCallProofResult,
+  type ProofDelegationClaims,
+  type HeldDelegation,
+} from './delegation/delegated-call-proof.js';
+export type { PresentedDelegation } from './delegation/named-delegation.js';
+export {
+  DELEGATION_HEADER_PARAMETER,
+  NO_DELEGATION,
+  delegationStatement,
+  statedDelegationOf,
+  type RequestBindingMode,
+  type StatedDelegation,
+} from './delegation/stated-delegation.js';
+export { PARENT_CREDENTIAL_DIGEST, parentCredentialDigestOf } from './delegation/parent-commitment.js';
 
 export {
   delegationCredentialDigest,

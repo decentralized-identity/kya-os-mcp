@@ -12,7 +12,8 @@
  * uses only `jose` + `json-canonicalize`, already direct dependencies.
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
+import type { StatedDelegation } from '../../delegation/stated-delegation.js';
 import { Did, LEGACY_PROOF_PROFILE_ID, PROOF_PROFILE_ID, type ProofPublicJwk } from '../schema.js';
 
 /** The stateless per-request proof profile tag (the `prf` discriminator). */
@@ -141,8 +142,14 @@ export interface ProofSigner {
   readonly jkt?: string;
   /** The signing algorithm this signer produces — `EdDSA` (Ed25519) or `ES256` (P-256). Default `EdDSA`. */
   readonly alg?: 'EdDSA' | 'ES256';
-  /** Produce a DETACHED JWS (`protectedHeader..signature`) over `payload`, signed with {@link alg}. */
-  sign(payload: Uint8Array): Promise<string>;
+  /**
+   * Produce a DETACHED JWS (`protectedHeader..signature`) over `payload`, signed with {@link alg}.
+   * `protectedHeader` holds the parameters to write in the JWS protected header beside `alg` and
+   * `kid`, which they never replace: the delegation the proof states (SPEC.md §7.8). A signer that
+   * leaves them out makes a proof that states no delegation, which a verifier that requires the
+   * statement refuses.
+   */
+  sign(payload: Uint8Array, protectedHeader?: Readonly<Record<string, string>>): Promise<string>;
   /**
    * OPTIONAL: produce a RAW EdDSA signature (base64url, NOT JWS-framed) over `payload` with the
    * SAME key as {@link sign}. Enables the dual-carrier RFC 9421 sibling — the raw signature over
@@ -164,6 +171,15 @@ export interface BuildProofContext {
   cnfJkt?: string;
   /** Injectable clock returning epoch MILLISECONDS (deterministic tests). */
   now?: () => number;
+  /**
+   * The delegation the call presents, which the proof states (SPEC.md §7.8): the leaf credential of
+   * the chain it carries, the caller's own, or `'none'` for a call that carries no chain. Leave it
+   * out when the request given to `buildCardProof` already holds the chain in
+   * `params._meta['org.kya-os/delegation-chain']`: the proof then states that chain's leaf, or
+   * `'none'` when the request holds no chain. Pass it when the chain is added to `_meta` after the
+   * proof is made, or to name the delegation a verifier resolves by reference.
+   */
+  delegation?: object | 'none';
 }
 
 /**
@@ -268,4 +284,10 @@ export interface ProofVerifyResult {
    * not L3. Surfaced so an integrator who intended L3 sees the downgrade instead of it passing silently.
    */
   warnings?: string[];
+  /**
+   * Present only when `ok`: what the proof states of the delegation its call presents (SPEC.md
+   * §7.8), read from the JWS protected header the signature verified over. Hand it to
+   * `verifyRequestDelegation` as `statedDelegation`, which holds the chain to it.
+   */
+  statedDelegation?: StatedDelegation;
 }

@@ -11,7 +11,7 @@
  * is registered with it again.
  */
 
-import type { CredentialStatus } from '../types/protocol.js';
+import type { CredentialStatus, StatusList2021Credential, StatusListCredential } from '../types/protocol.js';
 import { describeOptionValue, describeValue } from '../utils/describe-value.js';
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { StatusListStorageProvider } from './statuslist-storage.js';
@@ -60,7 +60,8 @@ export interface StatusEntryOwners {
  * `setStatusListIfMatch`, may change a record. A list a writer read before an entry was retired,
  * and wrote back after, would otherwise bring the entry back for registration.
  */
-export interface StatusEntryOwnerStorageProvider extends StatusListStorageProvider {
+export interface StatusEntryOwnerStorageProvider<L extends StatusListCredential = StatusList2021Credential>
+  extends StatusListStorageProvider<L> {
   /**
    * Record `owner` for entry `index` of list `statusListId`, which `allocateIndex` just gave, only
    * while no record of that entry exists, retired or not. Resolve true when it recorded `owner`,
@@ -75,7 +76,7 @@ export interface StatusEntryOwnerStorageProvider extends StatusListStorageProvid
   getEntryOwner(statusListId: string, index: number): Promise<StatusEntryOwner | null>;
 }
 
-function recordsOwners(storage: StatusListStorageProvider): storage is StatusEntryOwnerStorageProvider {
+function recordsOwners(storage: StatusListStorageProvider<StatusListCredential>): storage is StatusEntryOwnerStorageProvider<StatusListCredential> {
   return (
     'setEntryOwnerIfAbsent' in storage &&
     typeof storage.setEntryOwnerIfAbsent === 'function' &&
@@ -113,7 +114,7 @@ const RECORD_NOTHING: EntryOwnerRecorder = async () => undefined;
  * so no index is taken for an entry whose owner would be lost.
  */
 export function entryOwnerRecorder(
-  storage: StatusListStorageProvider,
+  storage: StatusListStorageProvider<StatusListCredential>,
   options: StatusEntryAllocationOptions | undefined,
 ): EntryOwnerRecorder {
   const delegationId: unknown = options?.delegationId;
@@ -153,7 +154,7 @@ export function entryOwnerRecorder(
  * the same entry; one that is neither a decimal string nor a whole number throws.
  */
 export async function readEntryOwner(
-  storage: StatusListStorageProvider,
+  storage: StatusListStorageProvider<StatusListCredential>,
   credentialStatus: CredentialStatus,
 ): Promise<StatusEntryOwner | undefined> {
   if (!recordsOwners(storage)) return undefined;
@@ -164,7 +165,7 @@ export async function readEntryOwner(
 
 /** Retire `credentialStatus` in `storage`'s records, keeping its owner, when it has one and is not retired yet. */
 export async function retireEntryOwner(
-  storage: StatusListStorageProvider,
+  storage: StatusListStorageProvider<StatusListCredential>,
   credentialStatus: CredentialStatus,
 ): Promise<void> {
   if (!recordsOwners(storage)) return;

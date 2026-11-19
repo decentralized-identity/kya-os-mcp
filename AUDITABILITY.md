@@ -184,6 +184,37 @@ closed with `AUDIT_JOURNAL_FAILURE` instead of signing a second entry at a
 receipted sequence. Restoring a journal is an epoch transition, not a silent
 rewind.
 
+A head the recorder did not append in this process, and every leaf a checkpoint covers, is otherwise whatever the journal store holds.
+A party that can write that store, and holds no key, can insert a well-formed entry with correct digests and a receipt the recorder never signed: the recorder would then sign a successor that commits to it, and the checkpoint builder a tree that holds it.
+The recorder and the checkpoint builder therefore check each such entry before they build on it.
+The recorder chains to such a head only once the stored entry at that head verifies as one it signed for its ledger epoch, and the builder signs a checkpoint only over leaves that chain to the leaf before them and that verify as their recorder's, where its verifier can check the recorder's key (below); each refuses with `AUDIT_JOURNAL_FAILURE`, naming the entry's `sequence`, otherwise.
+The builder verifies the leaves after the last checkpoint it verified in full, and every leaf after a restart.
+
+They check with the `signatures` verifier when you give one.
+Otherwise they ask their signer: a `CompactJwsAuditSigner` over a private JWK, a Node.js `KeyObject` or an extractable `CryptoKey` derives, from the public half of its key, a verifier of signatures under its own `ref`, and they use that.
+A `CompactJwsAuditSigner` over a `CryptoKey` created non-extractable, from which WebCrypto reads no public key, derives none, and nor does a signer of your own unless it implements `verifier()`, as a signer backed by a remote key service can when it reads the public key from that service.
+When the signer derives none, and its `ref` names an Ed25519 did:key with the `EdDSA` algorithm, they derive a verifier from that did:key, once the signer has signed a fixed self-check payload that verifies under it; a `ref` naming another key than the one the signer signs with derives nothing.
+A did:web `ref` is not read, since the recorder has no fetch provider.
+Otherwise give such a recorder and builder the `signatures` verifier you give `AuditArtifactVerifier`, resolving the recorder's key; without any, the journal is trusted as written, as in earlier releases, and each warns once per process.
+
+```ts
+// recorderKeys is an AuditVerificationKeyResolver that resolves the recorder's public key.
+const signatures = new CompactJwsAuditSignatureVerifier(recorderKeys);
+const recorder = new AuditRecorderService({ ...config, journal, signer, hasher, clock, signatures });
+const checkpoints = new AuditCheckpointBuilder({ journal, store, signer, hasher, signatures });
+```
+
+A derived verifier checks only entries recorded under the signer's own key.
+That covers the recorder, which chains only to entries recorded under its own key, as every entry of its epoch is.
+The recorder of an epoch signs every entry in it, its genesis included, under one key, so the builder holds every leaf to the key the epoch's genesis entry names, and refuses a leaf under any other.
+A builder that signs with the recorder's own key verifies every leaf with its derived verifier.
+A checkpoint builder may sign with a key of its own, and then cannot check the recorder's entries with its derived verifier: when the genesis names another key than its own, it trusts the epoch's leaves as written, as in earlier releases, still requires each to chain to the leaf before it, to name the genesis key and to have the digest its core recomputes to, and warns once per process for that key, naming it and saying to pass `signatures`.
+The builder recomputes the genesis digest from its core on every run, so the key the genesis names is the one the latest checkpoint's root covers: a journal writer that rewrites it under its digest is refused with `AUDIT_JOURNAL_FAILURE` naming sequence 0.
+A forged entry under the genesis key is therefore checkpointed with only that warning, so give such a builder `signatures` that resolve the recorder's key wherever you can; with `signatures` every leaf is verified, and one under a key they cannot resolve is refused.
+The warning names at most 32 keys in a process, then says once that there are more.
+When the signer fails to derive its verifier, the recorder or builder refuses the call with `AUDIT_INVALID_CONFIGURATION` and asks the signer again on the next one.
+`createInMemoryReferenceRecorder` passes `signatures`.
+
 Run the provider contract kit for every adapter:
 
 ```ts
@@ -193,9 +224,31 @@ const report = await evaluateAuditJournalProviderContract(
 assertAuditProviderContract(report);
 ```
 
+The journal contract issues eight compare-and-append calls on one expected head at once.
+Exactly one must commit, and each of the others must answer `head_conflict` with the head that won, or fail without committing.
+A journal that reads the head, compares it and then inserts, with any await between the two steps, commits more than one, and the recorder would sign each of them at one sequence.
+The contract also offers an expected head that is no longer the head, both the current sequence with another entry's digest and an earlier head, and requires a `head_conflict` that names the actual head.
+Passing it shows that the adapter serializes appends under the contract's load; it does not prove the adapter atomic under every load, so keep the comparison and the insert in one transaction or one serialization point as below.
+
 The package also includes distinct evidence, observer, and supporting-anchor
 contract suites. Passing the anchor suite never qualifies an adapter as an
 independent observer.
+
+The observer contract takes checkpoints signed by the recorder key your observer trusts.
+Besides `first`, `next`, `conflict`, `rollback` and the optional `gapped`, give it `fork`: a validly signed checkpoint of the same ledger epoch, larger than `first`, over a history that does not extend `first`'s tree, as a holder of the recorder key could sign after rewriting the observed history.
+Sign it over a second journal with the same ledger ID, epoch and key, recorded with different events.
+The observer must accept `fork` on its own and refuse it once it has observed `first`.
+Without `fork` that check is not run: the report lists it with `skipped` set to the reason, and it does not fail the report or `assertAuditProviderContract`, but no other fixture shows that the observer checks an extension, so give `fork` to have it checked.
+The contract also derives, from `first` and `next`, checkpoints whose signature does not verify, and requires the observer to refuse each and keep `first` as its latest observation; that check needs no fixture and always runs.
+
+A check that a contract could not run, for want of a fixture, is reported with `passed: true` and `skipped` set to why and what to give it.
+`passed` then means only that the check did not fail, so a CI job that must show every check ran can require that no check has `skipped` set:
+
+```ts
+const report = await evaluateAuditObserverProviderContract({ createProvider, fixtures });
+assertAuditProviderContract(report);
+expect(report.checks.filter((check) => check.skipped !== undefined)).toEqual([]);
+```
 
 For PostgreSQL, use a ledger-head row plus entry/idempotency unique constraints
 inside one transaction. For Cloudflare, route one epoch to one Durable Object
@@ -380,6 +433,10 @@ observers and supporting anchors. Publication is retryable and may enforce a
 minimum observer count and required anchor kinds. Failure does not roll back the
 signed checkpoint.
 
+A receipt counts only when it is for the checkpoint just published.
+An observation must name that checkpoint's digest, ledger epoch and tree size, and an anchor receipt its digest and the kind its provider declares.
+Any other answer, such as a lagging observer's receipt for an earlier checkpoint, is a failed publication for that provider, retried like a thrown one, and is never counted toward `minimumObservers` or `requiredAnchorKinds`.
+
 The roles are not interchangeable:
 
 - An independent observer validates, retains, chains, and compares checkpoint
@@ -413,6 +470,14 @@ nonce caches. It verifies:
 - supporting-anchor trust and an injected adapter verifier;
 - declared range completeness and explicit omission dispositions.
 
+Everything a bundle carries must sit inside a selection its signed manifest declares, because the exporter's grant is checked against those selections.
+An entry outside every selected range, or a checkpoint, observation, or Merkle proof of a ledger epoch no selection names, makes committed-scope completeness `invalid` (`AUDIT_BUNDLE_CONTENT_OUTSIDE_SELECTION`).
+
+Checkpoint and observation integrity speak for the entries a bundle selects.
+A checkpoint covers a selection when it belongs to the selection's ledger epoch and its tree holds every entry selected.
+Until a checkpoint in the bundle covers every selection, checkpoint integrity is at best `indeterminate` (`AUDIT_CHECKPOINT_MISSING`), and until an observation in the bundle names such a checkpoint for every selection, observation integrity is at best `indeterminate` (`AUDIT_OBSERVER_EVIDENCE_MISSING`).
+A checkpoint over an earlier tree, or of another epoch, says nothing about entries it does not hold, so a bundle meant to meet AAP-3 or AAP-4 selects ranges that end inside a checkpoint's tree.
+
 A subset export need not carry every leaf. A checkpoint whose complete prefix is
 present has its root recomputed; otherwise its signature, digest, issuer trust,
 and declared range are verified (`AuditArtifactVerifier.verifySignedCheckpoint`),
@@ -424,6 +489,11 @@ consistency proof; the proof, not the chain link, is the split-view guarantee,
 as for an observer catching up. A successor genesis commits where its
 predecessor epoch ends, so a predecessor checkpoint over a larger tree than
 that terminal checkpoint is reported as `AUDIT_CHECKPOINT_FORK_DETECTED`.
+
+A bundle may carry the geneses of the epochs that succeed the ones it selects, as an included component of media type `application/vnd.kya-os.audit.successor-geneses.v1+json` (`AUDIT_BUNDLE_MEDIA_TYPES.successorGeneses`) whose content is an array of signed entries.
+They are evidence, not selected content, so they sit outside every selection's scope.
+Each dates the records of the epoch before it once that epoch's key has ended, as *Artifacts whose key has ended* below describes; the genesis of a selected successor epoch, carried with its entries, dates them as well.
+The member is optional, and a verifier that predates it ignores it, as it ignores any component of a media type it does not read.
 Predecessor entries past the terminal are not by themselves a fork: the
 terminal checkpoint's own `checkpoint.created` event is appended after it is
 signed.
@@ -446,8 +516,8 @@ rejected for the constraints it uses:
 - `requiredAuditProfile` marks every dimension the profile depends on
   `invalid` (`AUDIT_REQUIRED_PROFILE_UNMET`) unless it is `valid`: AAP-1 needs
   cryptographic integrity, AAP-2 adds chain integrity, AAP-3 checkpoint
-  integrity, and AAP-4 observation integrity plus at least one supporting
-  anchor receipt.
+  integrity, and AAP-4 observation integrity plus, for every selection, a
+  supporting anchor receipt for a checkpoint that covers it.
 - `keyRevocationMode` selects when key status is evaluated. The integrity
   dimensions always evaluate a key as observed, at the artifact's signing time
   and ledger position, because revocation does not rewrite what was observed;
@@ -461,6 +531,37 @@ rejected for the constraints it uses:
   as-observed check is never waived, `current` and `both` evaluate the same
   keys. Current key status alone never makes `currentAuthorization` `valid`;
   that still takes the injected authorization verifier.
+  The time an artifact states is its signer's own claim, so the as-observed check alone holds only while the key is live; the next section says what holds once it has ended.
+
+### Artifacts whose key has ended
+
+A key has ended when the policy no longer lists it as valid at `verifiedAt`: its `validUntil` has passed, or it names a `validUntilCheckpoint`.
+A verifier with no `verifiedAt` clock takes any key with an end as ended, as nothing shows it has not.
+Whoever still holds an ended key can sign any time, so an entry or checkpoint it signed is its holder's word alone on when it was signed.
+Under every key revocation mode, such an artifact makes its dimension `indeterminate` (`AUDIT_KEY_ENDED_UNDATED`) unless evidence its signer does not control dates it at or before the key's end, which is the `validUntil` of the interval that places it; for an interval that ends only at a checkpoint, any such evidence does.
+This is never `invalid` on its own, and an artifact whose key is still live is taken at its word as before.
+
+Evidence dates checkpoints, and a checkpoint dates every entry its tree holds, by its recomputed root or a verified inclusion proof:
+
+- The genesis of a successor epoch, signed by the new key and verified as the first entry of an epoch the policy trusts, with that key placed at the time the genesis states, commits to the terminal checkpoint of the epoch before it.
+  While the new key is live, or once evidence dates the genesis before the new key ended, it dates that terminal checkpoint at the genesis's `recordedAt`.
+  This is the evidence an ordinary rotation leaves: every record its predecessor's terminal checkpoint holds stays `valid`.
+- A checkpoint signed by another key the policy trusts for the epoch, while that key is live, is dated at its own `createdAt`.
+- An observation by a trusted observer whose key is live is dated at its `observedAt`, and a supporting anchor receipt that verified at its `issuedAt`.
+- A checkpoint a policy `validUntilCheckpoint` names, on a recorder key or a ledger epoch, is dated before any end: whoever wrote the policy vouches for the tree the key or epoch ends at.
+- A dated checkpoint dates an earlier checkpoint whose tree it holds: the one its `previousCheckpointDigest` names, one bound to it by a verified consistency proof, and one recomputed from the same carried leaves.
+
+An entry outside every dated tree reads `indeterminate`: a record inserted after the rotation, or a fork of the epoch at a position its terminal checkpoint covers.
+A successor genesis offered as evidence that dates nothing is reported as `AUDIT_SUCCESSOR_GENESIS_MISMATCH`, also `indeterminate`: one that does not verify, that is not the first entry of its epoch, whose key the policy does not place at its time, or that commits to a terminal checkpoint other than a verified one of the epoch it names.
+A genesis whose own key has ended dates nothing until evidence dates it in turn, as the terminal checkpoint of its own epoch, committed by the next genesis, does.
+
+Nothing dates an export, so a bundle whose exporter key has ended leaves cryptographic integrity `indeterminate` (`AUDIT_KEY_ENDED_UNDATED`); export it again under a live key.
+An observation receipt is not held to this rule, and stays `valid` once its observer's key has ended.
+Observations are what dates the other records, so undating every older one whenever an observer rotates its key would leave the bundles it dated undecided.
+The cost is that a receipt signed after its observer's key ended, by whoever still holds that key, reads as an honest one, though it dates nothing, as the list above says.
+
+Set an old recorder key's `validUntil` at or after the successor genesis's `recordedAt`, or end it by `validUntilCheckpoint` at the terminal checkpoint, so the genesis dates the records before the end.
+Outside a bundle, give the verifier the successor geneses in `AuditVerificationContext.successorGeneses`, the terminal checkpoint in `checkpoints`, and the epoch's entries from its first, so its root can be recomputed.
 
 When a policy requires observation freshness, an observation dated more than
 the verifier's clock-skew allowance (`maxClockSkewMs`, default 120 s) after
@@ -488,6 +589,12 @@ Exit code `0` means no dimension is invalid, `1` means at least one invalid
 dimension, and `2` means usage/configuration/input processing failed. An
 `indeterminate` dimension remains visible in the JSON report and must be handled
 by the relying party's policy.
+
+The CLI verifies at the present time.
+Under a policy whose `keyRevocationMode` is `current` or `both`, each key the bundle was signed with must still be valid now, and `requiredCheckpointFreshnessMs` is measured to now, so a key whose validity has ended or a stale observation makes its dimension `invalid` and the exit code `1`.
+
+A failure that exits `2` writes one line to standard error, naming the file it concerns: `bundle.json is not valid JSON`, `policy.json is not a valid verification policy: ...`, or `keys.json could not be read: ...`.
+It quotes no bytes of a file that is not JSON, and every character that does not print, a terminal's escape sequences among them, is written as U+FFFD, so a bundle from a stranger cannot reach the operator's terminal.
 
 ## Projections and Checkpoint integration
 

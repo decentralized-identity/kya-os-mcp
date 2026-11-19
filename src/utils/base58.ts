@@ -7,6 +7,8 @@
  * The Bitcoin alphabet excludes ambiguous characters (0, O, I, l).
  */
 
+import { describeValue } from './describe-value.js';
+
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const ALPHABET_MAP = new Map<string, number>();
 
@@ -89,7 +91,8 @@ export function base58Decode(encoded: string, maxLength?: number): Uint8Array {
   for (const char of encoded) {
     const value = ALPHABET_MAP.get(char);
     if (value === undefined) {
-      throw new Error(`Invalid base58 character: ${char}`);
+      // Quoted: whoever wrote the string chose the character, and a caller may log the message.
+      throw new Error(`Invalid base58 character ${describeValue(char)}`);
     }
     num = num * BigInt(58) + BigInt(value);
   }

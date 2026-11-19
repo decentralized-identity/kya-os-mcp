@@ -8,7 +8,9 @@
  * end, before its start or stating a bound that is not a date is refused, and one inside its window,
  * or stating no end, is read. A date is an RFC 3339 date-time with its zone (suite >= 1.10.0): a
  * bound with no zone, or in a form `Date.parse` reads but RFC 3339 does not write, is refused, and one
- * at an offset from UTC is read. It runs on its own, so adding a case re-signs this file and no other.
+ * at an offset from UTC is read. A list's `ttl` is no part of that window (suite >= 1.13.0): a list
+ * inside its window is read whatever its `ttl`, and one past its end is refused whatever its `ttl`.
+ * It runs on its own, so adding a case re-signs this file and no other.
  *
  * It mints parties and signs delegations as `generate-vectors.ts` does, with fresh keys on every
  * run, so its output must never be committed over an existing suiteVersion. Every window is fixed,
@@ -30,8 +32,21 @@ const PAST = '2026-02-01T00:00:00.000Z';
 const LONG_AGO = '2026-01-01T00:00:00.000Z';
 const FAR_AHEAD = '2999-01-01T00:00:00.000Z';
 
-/** One case: the vector's name, its outcome, why, the list's form and the window it states. */
-type WindowCase = readonly [name: string, expected: 'pass' | 'fail', reason: string, form: 'bitstring' | 'statuslist2021', window: Record<string, unknown>];
+/** A `ttl` of a century, in milliseconds: one that has not run out, from whenever a verifier counts it. */
+const CENTURY_MS = 36_525 * 24 * 60 * 60 * 1000;
+
+/**
+ * One case: the vector's name, its outcome, why, the list's form, the window it states, and what
+ * its subject states beside its type, its purpose and its bits.
+ */
+type WindowCase = readonly [
+  name: string,
+  expected: 'pass' | 'fail',
+  reason: string,
+  form: 'bitstring' | 'statuslist2021',
+  window: Record<string, unknown>,
+  subject?: Record<string, unknown>,
+];
 
 const CASES: readonly WindowCase[] = [
   ['in-window-list', 'pass', 'A clear list inside the window it states is read', 'bitstring', { validFrom: LONG_AGO, validUntil: FAR_AHEAD }],
@@ -45,6 +60,9 @@ const CASES: readonly WindowCase[] = [
   ['zoneless-start-list', 'fail', 'A list whose validFrom states no time zone names no single instant, since each verifier would read it in its own zone, so it is refused', 'bitstring', { validFrom: '2026-01-01T00:00:00', validUntil: FAR_AHEAD }],
   ['zoneless-end-list-2021', 'fail', 'A StatusList2021 list whose expirationDate states no time zone is refused, though VC 1.1 lets a dateTime leave its zone out', 'statuslist2021', { issuanceDate: LONG_AGO, expirationDate: '2999-01-01T00:00:00' }],
   ['http-date-end-list', 'fail', 'A list whose validUntil is an HTTP date, which is not an RFC 3339 date-time, is refused', 'bitstring', { validFrom: LONG_AGO, validUntil: 'Tue, 01 Jan 2999 00:00:00 GMT' }],
+  ['ttl-list', 'pass', 'A clear list that states validFrom, validUntil and ttl, as the reference issuer writes a Bitstring Status List, is read: ttl says when to fetch the list again, and is no part of its window', 'bitstring', { validFrom: LONG_AGO, validUntil: FAR_AHEAD }, { ttl: 300_000 }],
+  ['ttl-past-end-list', 'fail', 'A clear list past its validUntil is refused though its ttl has not run out: ttl does not override or replace the validity period', 'bitstring', { validFrom: LONG_AGO, validUntil: PAST }, { ttl: CENTURY_MS }],
+  ['ttl-run-out-list', 'pass', 'A clear list that states no validUntil is read though its ttl, counted from its validFrom, ran out long ago: ttl is no end', 'bitstring', { validFrom: LONG_AGO }, { ttl: 1 }],
   ['offset-window-list', 'pass', 'A clear list whose bounds are RFC 3339 date-times at offsets from UTC, one with nine digits of a second, is read', 'bitstring', { validFrom: '2026-01-01T05:30:00.123456789+05:30', validUntil: '2998-12-31T18:00:00-06:00' }],
 ];
 
@@ -54,13 +72,13 @@ export async function statusListValidityVectors<P extends Signer>(deps: StatusLi
   const didDocuments = { [issuer.did]: deps.didDocumentFor(issuer) };
   const encodedList = await new BitstringManager(131072, statusListGzipCodec, statusListGzipCodec).encode();
 
-  /** The issuer's clear list at `url` in `form`, stating `window`, signed by the issuer. */
-  async function list(url: string, form: WindowCase[3], window: Record<string, unknown>) {
+  /** The issuer's clear list at `url` in `form`, stating `window` and, in its subject, `subject`, signed by the issuer. */
+  async function list(url: string, form: WindowCase[3], window: Record<string, unknown>, subject: Record<string, unknown> = {}) {
     const unsigned = form === 'bitstring'
       ? {
           '@context': ['https://www.w3.org/ns/credentials/v2'], id: url,
           type: ['VerifiableCredential', 'BitstringStatusListCredential'], issuer: issuer.did, ...window,
-          credentialSubject: { id: `${url}#list`, type: 'BitstringStatusList', statusPurpose: 'revocation', encodedList },
+          credentialSubject: { id: `${url}#list`, type: 'BitstringStatusList', statusPurpose: 'revocation', encodedList, ...subject },
         }
       : {
           '@context': ['https://www.w3.org/2018/credentials/v1', 'https://w3id.org/vc/status-list/2021/v1'], id: url,
@@ -71,7 +89,7 @@ export async function statusListValidityVectors<P extends Signer>(deps: StatusLi
   }
 
   const vectors: ConformanceVector[] = [];
-  for (const [name, expected, reason, form, window] of CASES) {
+  for (const [name, expected, reason, form, window, subject] of CASES) {
     const url = `https://status.example.com/validity/${name}`;
     const entry: CredentialStatus = {
       id: `${url}#7`, type: form === 'bitstring' ? 'BitstringStatusListEntry' : 'StatusList2021Entry',
@@ -81,7 +99,7 @@ export async function statusListValidityVectors<P extends Signer>(deps: StatusLi
       id: `status-list/${name}`, category: 'status-list', description: reason, reason, expected,
       input: {
         credential: await deps.signDelegation(issuer, holder.did, `validity-${name}`, entry),
-        statusLists: { [url]: await list(url, form, window) },
+        statusLists: { [url]: await list(url, form, window, subject) },
         didDocuments, serverDid: deps.serverDid,
       },
     });

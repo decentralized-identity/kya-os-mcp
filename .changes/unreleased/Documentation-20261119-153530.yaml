@@ -1,0 +1,7 @@
+kind: Documentation
+body: |-
+    **UPGRADING.md opens the notes for this release with "Do I need to do
+    anything?"**, which names the two cases that need work, acting on a
+    delegated call and writing status lists from more than one process,
+    and links each narrower case to its section.
+time: 2026-11-19T15:35:30.000000-06:00

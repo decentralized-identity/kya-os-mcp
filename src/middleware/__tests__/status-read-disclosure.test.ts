@@ -21,6 +21,7 @@ import { delegationRecord, signedCredential } from '../../__tests__/utils/delega
 import type { FetchProvider } from '../../providers/base.js';
 import type { CredentialStatus } from '../../types/protocol.js';
 import { createMiddleware, crypto, handshake, served } from './helpers/received-proof.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const SCOPE = 'vault:read';
 const CONSENT = { scopeId: SCOPE, consentUrl: 'https://example.com/consent' };
@@ -92,7 +93,7 @@ describe("the gate's refusal of a delegation whose status list could not be read
     ],
   ])('names the list and says only that it could not be read, logging the rest, for %s', async (_name, resolver, detail) => {
     const { answer, logged } = await gateAnswer(resolver(), INTERNAL_LIST);
-    expect(answer).toEqual({ error: 'delegation_invalid', reason: `Delegation del-1 invalid: Status check error: the status list at "${INTERNAL_LIST}" could not be read or checked` });
+    expect(answer).toEqual({ error: 'delegation_invalid', reason: `Delegation del-1 invalid: Status check error: the status list at "${INTERNAL_LIST}" could not be read or checked${WITHHELD_SUFFIX}` });
     expect(logged).toContain(detail);
   });
 

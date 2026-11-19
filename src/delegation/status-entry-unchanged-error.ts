@@ -3,11 +3,16 @@
  * revocation would set or a restore would clear. It is the operator's error, not a refusal of a
  * credential, so it is no `RefusalError` and carries no refusal code: a host does not pass it to a
  * presenter. Its message quotes each id and entry it names (`describeValue`), since a re-delegation's
- * issuer writes the entry it carries.
+ * issuer writes the entry it carries. A revocation that also could not mark a delegation throws
+ * `RevocationStalledError` instead, a transient `RefusalError` the caller retries, which carries the
+ * entries left unchanged with the rest of the walk's reports.
  */
 
 import type { CredentialStatus } from '../types/protocol.js';
+import { describeTimeout } from '../utils/deadline.js';
 import { describeValue } from '../utils/describe-value.js';
+import { RefusalError } from '../utils/refusal.js';
+import { NODE_TURN_WAIT_MS } from './graph-node-turns.js';
 import type { RevocationEvent } from './cascading-revocation.js';
 import { entryKey } from './delegation-status-entry.js';
 
@@ -150,5 +155,60 @@ export function revocationNotRecorded(first: UnrecordedRevocation, more: number)
     `Revocation of delegation ${describeValue(first.delegationId)} was not recorded: ${why}, and the graph storage ` +
       'provider did not persist DelegationNode.revoked, the only record of a revocation that sets no status list ' +
       `entry. A DelegationGraphStorageProvider must store the revoked field.${others}`,
+  );
+}
+
+/** What a revocation of a subtree did, as the error it throws when it did not land in full carries it. */
+export interface RevocationReports {
+  /** The event of each delegation whose revocation landed: marked in the graph, or set on its status list. */
+  readonly events: readonly RevocationEvent[];
+  /** Each delegation the revocation could not mark, since its turn at the node did not come. */
+  readonly stalled: readonly string[];
+  /** Each revocation the graph storage provider did not record, with no status list entry set for it. */
+  readonly unrecorded: readonly UnrecordedRevocation[];
+  /** Each status list entry the revocation left unchanged. */
+  readonly unchanged: readonly UnchangedStatusEntry[];
+}
+
+/**
+ * A revocation that could not mark every delegation of its subtree in the graph, since another
+ * change to a node did not finish in time: a transient `deadline_exceeded`, so the caller revokes
+ * again. It carries every report of the walk, which went on past each such node.
+ */
+export class RevocationStalledError extends RefusalError implements RevocationReports {
+  override readonly name = 'RevocationStalledError';
+  readonly events: readonly RevocationEvent[];
+  readonly stalled: readonly string[];
+  readonly unrecorded: readonly UnrecordedRevocation[];
+  readonly unchanged: readonly UnchangedStatusEntry[];
+
+  constructor(message: string, reports: RevocationReports) {
+    super('deadline_exceeded', message);
+    this.events = reports.events;
+    this.stalled = reports.stalled;
+    this.unrecorded = reports.unrecorded;
+    this.unchanged = reports.unchanged;
+  }
+}
+
+/**
+ * The error of a revocation of `root` that could not mark the delegations `reports.stalled` names
+ * in the graph, the first of them named in its message. Every other delegation of the subtree is
+ * marked.
+ */
+export function revocationStalled(root: string, reports: RevocationReports): RevocationStalledError {
+  const [first, ...rest] = reports.stalled;
+  const more = rest.length;
+  const others =
+    more === 0
+      ? ''
+      : more === 1
+        ? ' One more delegation of the subtree was not marked either.'
+        : ` ${more} more delegations of the subtree were not marked either.`;
+  return new RevocationStalledError(
+    `Revocation of delegation ${describeValue(root)} did not land in full: delegation ${describeValue(first)} was not ` +
+      'marked revoked, since another change to its node in the graph did not finish within ' +
+      `${describeTimeout(NODE_TURN_WAIT_MS)}.${others} Revoke delegation ${describeValue(root)} again`,
+    reports,
   );
 }

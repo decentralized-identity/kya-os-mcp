@@ -29,6 +29,8 @@ pnpm example:verify-proof proof.json
 It parses the proof, resolves the signer DID, verifies the Ed25519 JWS
 signature, checks the nonce against replay, checks timestamp skew (5 min), and
 prints `VALID` / `INVALID` (exit 1 on failure).
+On a valid proof it then prints the signer, session, outcome and time from `result.meta`, the meta the verifier hands back.
+That meta holds only what the signature covers, so read it rather than `proof.meta` as received (SPEC §7.4).
 
 ## Anti-MITM content binding
 

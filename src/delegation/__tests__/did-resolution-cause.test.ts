@@ -5,9 +5,10 @@
  * library's resolvers report the cause of their last failure for a DID through `lastFailure`, as an
  * object a caller can branch on, and the verifier codes the refusal by it. It appends what the
  * failure says, in parentheses, only where that was decided from the DID alone, before any request,
- * or the deadline passed; what the network answered is left to the log and `lastFailure`. A
- * resolver of the host's own, without `lastFailure`, is refused as before. Every test uses the
- * package's public exports, as an adopter would.
+ * or the deadline passed; what the network answered is left to the log and `lastFailure`, and the
+ * refusal says the log has it. A resolver of the host's own, without `lastFailure`, is refused so
+ * too, the log saying it gave no cause. Every test uses the package's public exports, as an
+ * adopter would.
  */
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
@@ -25,6 +26,7 @@ import {
 import { createDidCheqdResolver } from '../../integrations/cheqd/index.js';
 import { AnsweringFetchProvider } from '../../__tests__/utils/adopter-providers.js';
 import { credentialJwt, delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 /** A did:web DID on `host`, with the URL of its document. */
 const webDid = (host: string) => ({ did: `did:web:${encodeURIComponent(host)}`, url: `https://${host}/.well-known/did.json` });
@@ -100,7 +102,7 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
     const [reason] = await refusals(resolver, HOPPING.did);
-    expect(reason).toBe(`Could not resolve issuer DID: "${HOPPING.did}"`);
+    expect(reason).toBe(`Could not resolve issuer DID: "${HOPPING.did}"${WITHHELD_SUFFIX}`);
     expect(resolver.lastFailure?.(HOPPING.did)).toEqual({ cause: 'host_refused', detail: 'Redirect to a "file:" URL refused' });
     expect(warn).toHaveBeenCalledWith(`[DidWebResolver] Error resolving ${HOPPING.did}: Redirect to a "file:" URL refused`);
   });
@@ -116,7 +118,7 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
   it('says only that the DID could not be resolved when the provider could not reach the host, leaving its error to the log, as unavailable', async () => {
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
-    const reason = `Could not resolve issuer DID: "${DOWN.did}"`;
+    const reason = `Could not resolve issuer DID: "${DOWN.did}"${WITHHELD_SUFFIX}`;
     expect(await refusals(resolver, DOWN.did)).toEqual([reason, reason]);
     expect(resolver.lastFailure?.(DOWN.did)?.cause).toBe('unavailable');
     expect(warn).toHaveBeenCalledWith(`[DidWebResolver] Error resolving ${DOWN.did}: fetch failed`);
@@ -126,7 +128,7 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
     const [reason] = await refusals(resolver, GONE.did);
-    expect(reason).toBe(`Could not resolve issuer DID: "${GONE.did}"`);
+    expect(reason).toBe(`Could not resolve issuer DID: "${GONE.did}"${WITHHELD_SUFFIX}`);
     const detail = `DID resolution failed: HTTP 404 for "${GONE.url}"`;
     expect(resolver.lastFailure?.(GONE.did)).toEqual({ cause: 'unavailable', detail });
     expect(warn).toHaveBeenCalledWith(`[DidWebResolver] Error resolving ${GONE.did}: ${detail}`);
@@ -136,7 +138,7 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const resolver = createDidWebResolver(network());
     const [reason] = await refusals(resolver, ELSEWHERE.did);
-    expect(reason).toBe(`Could not resolve issuer DID: "${ELSEWHERE.did}"`);
+    expect(reason).toBe(`Could not resolve issuer DID: "${ELSEWHERE.did}"${WITHHELD_SUFFIX}`);
     expect(resolver.lastFailure?.(ELSEWHERE.did)).toEqual({
       cause: 'invalid_document',
       detail: `The document at "${ELSEWHERE.url}" names another DID as its id`,
@@ -169,15 +171,17 @@ describe("the refusal of a credential whose issuer's did:web document cannot be 
 });
 
 describe("a resolver of the host's own", () => {
-  it('without lastFailure, is refused as before', async () => {
+  it('without lastFailure, is refused saying the log has why, and the log that it gave no cause', async () => {
     const own: DIDResolver = { resolve: async () => null };
-    const reason = `Could not resolve issuer DID: "${GONE.did}"`;
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const reason = `Could not resolve issuer DID: "${GONE.did}"${WITHHELD_SUFFIX}`;
     expect(await refusals(own, GONE.did)).toEqual([reason, reason]);
+    expect(warn.mock.calls.flat().join('\n')).toContain(`found no document for "${GONE.did}" and gave no cause`);
   });
 
-  it('whose lastFailure throws or answers something else, is refused as before', async () => {
+  it('whose lastFailure throws or answers something else, is refused as one without it is', async () => {
     const answers: unknown[] = [{ cause: 'unknown_cause', detail: 'x' }, { cause: 'unavailable' }, 'unavailable', null];
-    const reason = `Could not resolve issuer DID: "${GONE.did}"`;
+    const reason = `Could not resolve issuer DID: "${GONE.did}"${WITHHELD_SUFFIX}`;
     const throwing: DIDResolver = { resolve: async () => null, lastFailure: () => { throw new Error('no record'); } };
     expect(await refusals(throwing, GONE.did)).toEqual([reason, reason]);
     for (const answer of answers) {

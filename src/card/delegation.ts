@@ -22,7 +22,7 @@
  * under, for the host to enforce (`./caveats.ts`).
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 import { issuerOf } from '../utils/guards.js';
 import { Did, statusEntrySizeShape, type BitstringStatusListEntry } from './schema.js';
 import type { BitstringRevocationChecker, RevocationChainEntry } from './revocation.js';
@@ -36,6 +36,7 @@ import type { DelegationProofVerifier } from './delegation-proof.js';
 import { firstHopProofRefusal } from './hop-proofs.js';
 import { hopWindowRules } from './hop-window.js';
 import { withVerifiedRoot } from '../utils/verified-root.js';
+import { firstParentDigestRefusal } from './parent-digest.js';
 import { describeValue } from '../utils/describe-value.js';
 import { dateLte } from '../utils/rfc3339.js';
 import {
@@ -75,6 +76,13 @@ export const ZcapCapabilitySchema = z
     invocationTarget: z.string().min(1),
     allowedAction: z.array(z.string().min(1)),
     caveats: z.array(CaveatSchema).optional(),
+    /**
+     * The digest SPEC §7.8 gives the parent credential (`./parent-digest.ts`); a root states none.
+     * Read as any value: one in another form, `null` included, is not the parent's digest, which
+     * the chain rules refuse as `chain_invalid` (SPEC §6.10), so parsing leaves it to them, and a
+     * verifier that parses the chain and one that does not refuse it alike.
+     */
+    parentCredentialDigest: z.unknown().optional(),
   })
   .passthrough()
   .refine((s) => Boolean(s.controller ?? s.invoker), {
@@ -287,6 +295,20 @@ interface BrokenRule {
 const brokenAs = (code: RefusalCode, reasons: readonly string[]): BrokenRule[] => reasons.map((reason) => ({ code, reason }));
 
 /**
+ * The most reasons a refused chain gives. A presenter writes the chain, and one hop can state
+ * thousands of caveats its child drops, each a rule broken, so the reasons, which go back to it and
+ * into the operator's log, are bounded rather than grown with what it sent.
+ */
+const MAX_CHAIN_REASONS = 16;
+
+/** The reasons of `broken`: every one when there are at most {@link MAX_CHAIN_REASONS}, else the first ones and how many more. */
+function reasonsOf(broken: readonly BrokenRule[]): string[] {
+  if (broken.length <= MAX_CHAIN_REASONS) return broken.map((rule) => rule.reason);
+  const listed = broken.slice(0, MAX_CHAIN_REASONS - 1).map((rule) => rule.reason);
+  return [...listed, `and ${broken.length - listed.length} more rules it breaks`];
+}
+
+/**
  * What {@link validateDelegationChain} finds. A refused chain carries, beside its `reasons`, the
  * `code` of the first rule it breaks and whether that code is `transient`; a chain that passes
  * carries neither. Either carries the chain's `caveats` and `unknownCaveats`
@@ -308,6 +330,9 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
   if (subject.parentCapability !== subject.invocationTarget) {
     broken.push({ code: 'chain_invalid', reason: 'root delegation: parentCapability MUST equal invocationTarget (the resource)' });
   }
+  if (subject.parentCredentialDigest !== undefined) {
+    broken.push({ code: 'chain_invalid', reason: 'root delegation: it has no parent credential, so it states no parentCredentialDigest' });
+  }
   if (ctx.resource !== undefined && subject.invocationTarget !== ctx.resource) {
     broken.push({ code: 'chain_invalid', reason: 'root invocationTarget ≠ the expected resource' });
   }
@@ -319,8 +344,9 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
 
 /**
  * Structurally validate a chain (CRISP + continuity), fail-closed. Signature + revocation
- * are separate injected concerns (see {@link evaluateDelegationChain}). A refused chain gives every
- * reason it breaks a rule, and the code of the first: `chain_invalid` for an empty chain, one longer
+ * are separate injected concerns (see {@link evaluateDelegationChain}). A refused chain gives the
+ * reason for each rule it breaks, at most 16 of them, the 16th saying how many more it breaks when
+ * there are more, and the code of the first: `chain_invalid` for an empty chain, one longer
  * than `maxChainLength`, a root that does not name the resource and a hop that does not attenuate
  * its parent; `configuration_error` for a `maxChainLength` that is not a positive integer;
  * `untrusted_root` for a root not issued by `resourceOwner`; `delegation_malformed` for a caveat of
@@ -330,6 +356,12 @@ function rootReasons(root: DelegationCredential, ctx: DelegationChainContext): B
  * RFC 3339 date-time with its zone (`./hop-window.ts`); `configuration_error` too for a
  * `maxClockSkewMs` it cannot use. Either result carries the chain's effective caveats, each hop's
  * read at their tightest once. It has no side effect: it never warns.
+ *
+ * It does not check a hop's `parentCredentialDigest` (SPEC.md §6.10) against the hop before it:
+ * that digest is a SHA-256 the library computes only asynchronously, through Web Crypto. So a chain
+ * this accepts may hold a hop committed to another parent. {@link evaluateDelegationChain},
+ * `verifyRequestDelegation` and `requireDelegation` check every digest a hop states; call one of
+ * them, not this alone, before acting on a chain.
  */
 export function validateDelegationChain(
   chain: DelegationChain,
@@ -370,7 +402,7 @@ export function validateDelegationChain(
   const first = broken[0];
   return {
     ok: first === undefined,
-    reasons: broken.map((rule) => rule.reason),
+    reasons: reasonsOf(broken),
     ...(first === undefined ? {} : coded(first.code)),
     responsibleParty: responsiblePartyOf(chain),
     leafInvoker: leafInvokerOf(chain),
@@ -386,8 +418,10 @@ export interface DelegationChainEvaluation extends DelegationChainResult {
 }
 
 /**
- * Validate local chain rules, then every hop's proof, then status, fail-closed.
- * After {@link validateDelegationChain} passes, `ctx.verifyHopProof` verifies the received hops
+ * Validate local chain rules, then each hop's parent commitment, then every hop's proof, then
+ * status, fail-closed. A hop that states `parentCredentialDigest` is refused as `chain_invalid`
+ * unless it is the digest of the hop before it (`./parent-digest.ts`); one that states none is not
+ * held to it. After both pass, `ctx.verifyHopProof` verifies the received hops
  * sequentially, root to leaf. The first proof refusal returns its code and `hop N: ...` reason,
  * with `fresh: false`, without calling the status checker or verifying later hops.
  * Only after every proof holds does the sequential revocation walk name each hop's issuer and,
@@ -408,6 +442,10 @@ export async function evaluateDelegationChain(
   const structural = validateDelegationChain(chain, ctx);
   if (!structural.ok) return { ...structural, fresh: false };
   const timeoutMs = dependencyTimeout(ctx.dependencyTimeoutMs);
+  const uncommitted = await firstParentDigestRefusal(chain);
+  if (uncommitted !== undefined) {
+    return { ...structural, ok: false, ...coded(uncommitted.code), reasons: [uncommitted.reason], fresh: false };
+  }
   if (ctx.verifyHopProof !== undefined) {
     const refused = await firstHopProofRefusal(chain, ctx.verifyHopProof, timeoutMs);
     if (refused !== undefined) {

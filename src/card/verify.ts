@@ -171,7 +171,8 @@ export interface VerifyCardDeps {
    * The DIDs the verifier pins as roots, as `verifyRequestDelegation`'s `trustedRootIssuers` names
    * them. When the accountability check has verified the Card's `responsibleParty` and it is one of
    * these, the list URL the verdict reports as `rootStatusList` is that pinned root's own, and the
-   * checker reads it on any host, a private one included, still pinned. Otherwise that URL is read
+   * checker reads it, still pinned, on a private host where that host is the root's own: the https
+   * origin, host and port, its did:web DID names. Otherwise that URL is read
    * as one the presenter named, under the private-network rule, since a host that accepts any root
    * lets the presenter be the root and choose the URL. It is not an allowlist for accountability
    * itself, which the `accountabilityVerifier` decides. Each entry is a string that starts with

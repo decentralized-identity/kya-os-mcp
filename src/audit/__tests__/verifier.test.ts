@@ -428,12 +428,16 @@ describe('AuditArtifactVerifier', () => {
     const afterRevocation = at(1_750_000_010_000);
     const valid = { verdict: 'valid', reasonCodes: [] };
     const notCurrent = { verdict: 'invalid', reasonCodes: [AUDIT_REASON_CODES.KEY_NOT_CURRENT] };
+    const undated = { verdict: 'indeterminate', reasonCodes: [AUDIT_REASON_CODES.KEY_ENDED_UNDATED] };
 
-    // The as-observed check stays in the integrity dimensions under every mode.
+    // The as-observed check stays in the integrity dimensions under every mode. Once the key has
+    // ended, nothing here but the signer's word dates the entries before that end.
     for (const mode of ['as_observed', 'current', 'both'] as const) {
       const report = await afterRevocation.verifyEntries(entries, revoked(mode));
-      expect(report.cryptographicIntegrity).toEqual(valid);
+      expect(report.cryptographicIntegrity).toEqual(undated);
       expect(report.authorizedAsObserved).toEqual(valid);
+      expect((await at(1_750_000_004_000).verifyEntries(entries, revoked(mode)))
+        .cryptographicIntegrity).toEqual(valid);
     }
     // Only current and both hold the key to its status at verification time.
     expect((await afterRevocation.verifyEntries(entries, revoked('as_observed')))
@@ -460,9 +464,10 @@ describe('AuditArtifactVerifier', () => {
         reasonCodes: [AUDIT_REASON_CODES.KEY_NOT_CURRENT],
       });
 
-    // Without a clock the current status is undecided, never valid.
+    // Without a clock the current status is undecided, never valid, and so is whether the key
+    // has ended.
     const unclocked = await verifier.verifyEntries(entries, revoked('both'));
-    expect(unclocked.cryptographicIntegrity).toEqual(valid);
+    expect(unclocked.cryptographicIntegrity).toEqual(undated);
     expect(unclocked.currentAuthorization).toEqual({
       verdict: 'indeterminate',
       reasonCodes: [

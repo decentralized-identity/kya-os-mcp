@@ -1,0 +1,11 @@
+kind: Fixed
+body: |-
+    **A chain refusal writes no presenter text raw to the operator's log.**
+    The line the gate logs when it withholds what the chain resolver
+    answered cleaned only the withheld half, while the half the presenter
+    reads carries the presented credential's `id` and `parentId`, written
+    before any signature is checked, so a line break or a bidirectional
+    override in either reached the log as written. The whole line is now
+    cleaned, and those refusals quote each id, as `Delegation "leaf"
+    references parent "middle"`.
+time: 2026-11-19T00:45:00.000000-06:00

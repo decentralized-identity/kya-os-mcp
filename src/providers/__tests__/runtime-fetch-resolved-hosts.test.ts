@@ -19,6 +19,7 @@ import {
 import type { DnsAddress, DnsLookup, RawResponse, SafeFetchTransport, TransportInit } from '../../card/index.js';
 import { delegationRecord, keyOf, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const METADATA = '169.254.169.254';
 const PUBLIC: DnsAddress = { address: '93.184.216.34', family: 4 };
@@ -93,7 +94,7 @@ describe('a verifier on the default runtime transport, given a did:web whose nam
     // Coded as a name that does not resolve is, so the code says nothing the lookup answered.
     expect(result.code).toBe('did_unavailable');
     // The DID's own name is what the presenter sent; what the name resolved to is not said.
-    expect(result.reason).toBe(`Could not resolve issuer DID: "${ISSUER}"`);
+    expect(result.reason).toBe(`Could not resolve issuer DID: "${ISSUER}"${WITHHELD_SUFFIX}`);
     const logged = warn.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
     expect(logged).toContain(`refused (host_refused): it resolves to the non-public address ${METADATA}`);
   });

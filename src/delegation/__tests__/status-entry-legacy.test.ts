@@ -11,10 +11,12 @@ import { logger } from '../../logging/index.js';
 import {
   ENTRY,
   REGISTRATION_REFUSED,
+  REMOVED_WHILE_REVOKED,
   forgetWarning,
   leftUnchanged,
   operator,
   refusal,
+  rejectionMessage,
 } from './helpers/status-entry-operator.js';
 
 const UNWIRED_WARNING =
@@ -221,7 +223,7 @@ describe('a graph built without statusEntryOwners', () => {
     expect(await op.bits()).toEqual({ root: false, victim: true });
   });
 
-  it("restores, half wired, a removed delegation's entry for a delegation registered again under its id", async () => {
+  it("keeps, half wired, a removed revoked delegation's id revoked, so none registered again under it clears its entry", async () => {
     const op = operator({ owners: 'half-wired' });
     await op.issue('root');
     await op.issue('agent', 'root');
@@ -229,13 +231,12 @@ describe('a graph built without statusEntryOwners', () => {
     await op.cascade.revokeDelegation('victim');
     await op.graph.removeDelegation('victim');
 
-    // Removal retires nothing here, and the owner record names an id, so the new delegation under
-    // that id reads as the entry's owner: it is registered, and restoring it clears the removed
-    // delegation's revoked bit. A graph built with statusEntryOwners refuses the registration.
+    // Removal retires nothing here, and the owner record names an id, so a new delegation under
+    // that id would read as the entry's owner and could restore it. The revoked delegation leaves
+    // a revoked record of its id, which refuses that registration, so the revoked bit stays set.
     expect(await op.manager.getStatusEntryOwner(op.entry('victim'))).toEqual({ delegationId: 'victim', retired: false });
-    await op.carrying('victim', 'agent', op.entry('victim'));
-    await op.cascade.restoreDelegation('victim');
+    expect(await rejectionMessage(op.carrying('victim', 'agent', op.entry('victim')))).toBe(REMOVED_WHILE_REVOKED('victim'));
 
-    expect(await op.bits()).toEqual({ root: false, agent: false, victim: false });
+    expect(await op.bits()).toEqual({ root: false, agent: false, victim: true });
   });
 });

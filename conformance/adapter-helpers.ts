@@ -15,10 +15,12 @@ import {
 import { verificationMethodJwk } from '../src/delegation/index.js';
 import type { FetchProvider } from '../src/providers/base.js';
 import {
-  validateDelegationChain as validateCardDelegationChain,
+  evaluateDelegationChain as evaluateCardDelegationChain,
   type Ed25519PublicJwk,
   type AccountabilityVerifier,
+  type BitstringRevocationChecker,
   type DelegationChain,
+  type DelegationProofVerifier,
 } from '../src/card/index.js';
 import type {
   Ed25519PublicJwkLike,
@@ -94,19 +96,29 @@ export function resolveJwksKey(keys: Ed25519PublicJwk[], kid: string): Ed25519Pu
 }
 
 /**
- * Wire the PUBLIC card `validateDelegationChain` into an {@link AccountabilityVerifier}:
- * the edge holds iff the chain attenuates correctly AND `card.responsibleParty ===
+ * The entity-card vectors check no hop proof and read no status list: their golden chain carries
+ * placeholder proofs and names lists no vector serves. The accountability edge holds the chain's
+ * own rules and each hop's commitment to its parent, which need no key and no fetch.
+ */
+const NO_HOP_PROOF_CHECKED: DelegationProofVerifier = () => true;
+const NO_STATUS_READ: BitstringRevocationChecker = async () => ({ revoked: false, fresh: true });
+
+/**
+ * Wire the PUBLIC card `evaluateDelegationChain` into an {@link AccountabilityVerifier}:
+ * the edge holds iff the chain attenuates correctly, inside every hop's window, with each hop that
+ * states `parentCredentialDigest` committed to the hop before it, AND `card.responsibleParty ===
  * issuer(rootVC)` AND the recomputed leaf invoker equals the asserted `proofDid`
- * (the delegation/proof JOIN). `fresh` mirrors the structural validity.
+ * (the delegation/proof JOIN). `fresh` mirrors the chain's validity.
  */
 export function makeAccountabilityVerifier(
   acc: EntityCardAccountabilityInput,
 ): AccountabilityVerifier {
   return async (card) => {
-    const result = validateCardDelegationChain(acc.chain as DelegationChain, {
+    const result = await evaluateCardDelegationChain(acc.chain as DelegationChain, NO_STATUS_READ, {
       resourceOwner: acc.resourceOwner,
       ...(acc.resource ? { resource: acc.resource } : {}),
       ...(acc.now !== undefined ? { now: () => acc.now! } : {}),
+      verifyHopProof: NO_HOP_PROOF_CHECKED,
     });
     const responsiblePartyOk = card.responsibleParty === result.responsibleParty;
     const joinOk = acc.proofDid === undefined || result.leafInvoker === acc.proofDid;

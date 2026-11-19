@@ -18,7 +18,7 @@ import type { AddressInfo } from 'node:net';
 import v8 from 'node:v8';
 import { runInNewContext } from 'node:vm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
+import * as z from 'zod';
 import { McpServer as McpServer2, createMcpHandler } from '@modelcontextprotocol/server';
 import { Client as Client2, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { McpServer as McpServer1 } from '@modelcontextprotocol/sdk/server/mcp.js';

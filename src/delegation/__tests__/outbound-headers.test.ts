@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
+import { createHash } from 'node:crypto';
 import { decodeJwt, decodeProtectedHeader } from 'jose';
 import {
   buildOutboundDelegationHeaders,
@@ -110,11 +111,25 @@ describe('buildOutboundDelegationHeaders', () => {
     expect(headers['KYA-OS-Delegation-Chain']).toBe(context.delegation.vcId);
   });
 
-  it('KYA-OS-Session-Id matches session.sessionId', async () => {
+  it('KYA-OS-Session-Id is the anchor of the session for the target host, never the session id', async () => {
     const context = createTestContext();
     const headers = await buildOutboundDelegationHeaders(context);
 
-    expect(headers['KYA-OS-Session-Id']).toBe(context.session.sessionId);
+    // SHA-256(UTF8(domain) || 0x00 || JCS([sessionId, target host])), written as `sha256:<hex>`.
+    const input = `org.kya-os.outbound.session-anchor.v1\0${JSON.stringify([context.session.sessionId, 'downstream-api.example.com'])}`;
+    const anchor = `sha256:${createHash('sha256').update(input, 'utf8').digest('hex')}`;
+    expect(headers['KYA-OS-Session-Id']).toBe(anchor);
+    expect(headers['KYA-OS-Session-Id']).not.toContain(context.session.sessionId);
+  });
+
+  it('KYA-OS-Session-Id is one anchor for one session at one host, and another for another of either', async () => {
+    const anchorOf = async (sessionId: string, targetUrl: string) =>
+      (await buildOutboundDelegationHeaders(createTestContext({ session: createTestSession({ sessionId }), targetUrl })))['KYA-OS-Session-Id'];
+    const here = await anchorOf('kyaos_one', 'https://downstream-api.example.com/a');
+
+    expect(await anchorOf('kyaos_one', 'https://downstream-api.example.com/b?c=d')).toBe(here);
+    expect(await anchorOf('kyaos_one', 'https://other-api.example.com/a')).not.toBe(here);
+    expect(await anchorOf('kyaos_two', 'https://downstream-api.example.com/a')).not.toBe(here);
   });
 
   it('KYA-OS-Delegation-Proof is a valid JWT with correct claims', async () => {
@@ -208,6 +223,52 @@ describe('buildOutboundDelegationHeaders', () => {
     await expect(
       buildOutboundDelegationHeaders(context)
     ).rejects.toThrow('Delegation must have vcId');
+  });
+
+  it('throws for a delegation record that is not active', async () => {
+    for (const [status, named] of [['revoked', '"revoked"'], ['expired', '"expired"'], [undefined, 'of type undefined']] as const) {
+      const context = createTestContext({ delegation: createTestDelegation({ status: status as DelegationRecord['status'] }) });
+      await expect(buildOutboundDelegationHeaders(context), String(status)).rejects.toThrow(
+        `Delegation must be active for outbound delegation (its status is ${named})`,
+      );
+    }
+  });
+
+  it('throws for a delegation record past its notAfter, or whose notAfter is no number', async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const notAfter of [nowSec - 60, Number.NaN, '4102444800' as unknown as number]) {
+      const context = createTestContext({ delegation: createTestDelegation({ constraints: { scopes: ['tool:execute'], notAfter } }) });
+      await expect(buildOutboundDelegationHeaders(context), String(notAfter)).rejects.toThrow(
+        'Delegation must not be past its notAfter for outbound delegation',
+      );
+    }
+    const inForce = createTestContext({ delegation: createTestDelegation({ constraints: { scopes: ['tool:execute'], notAfter: nowSec + 60 } }) });
+    await expect(buildOutboundDelegationHeaders(inForce)).resolves.toHaveProperty('KYA-OS-Delegation-Proof');
+  });
+
+  it('throws for a delegation record before its notBefore, or whose notBefore is no number', async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const notBefore of [nowSec + 60, Number.POSITIVE_INFINITY, null as unknown as number]) {
+      const context = createTestContext({ delegation: createTestDelegation({ constraints: { scopes: ['tool:execute'], notBefore } }) });
+      await expect(buildOutboundDelegationHeaders(context), String(notBefore)).rejects.toThrow(
+        'Delegation must not be before its notBefore for outbound delegation',
+      );
+    }
+    const begun = createTestContext({ delegation: createTestDelegation({ constraints: { scopes: ['tool:execute'], notBefore: nowSec - 60 } }) });
+    await expect(buildOutboundDelegationHeaders(begun)).resolves.toHaveProperty('KYA-OS-Delegation-Proof');
+  });
+
+  it('throws for a delegation record whose audience does not admit the forwarding server', async () => {
+    for (const audience of ['did:web:another-server.example.com', ['did:web:another-server.example.com'], 7 as unknown as string]) {
+      const context = createTestContext({ delegation: createTestDelegation({ constraints: { scopes: ['tool:execute'], audience } }) });
+      await expect(buildOutboundDelegationHeaders(context), JSON.stringify(audience)).rejects.toThrow(
+        'Delegation audience must admit the forwarding server for outbound delegation',
+      );
+    }
+    for (const audience of [serverDid, ['did:web:another-server.example.com', serverDid]]) {
+      const context = createTestContext({ delegation: createTestDelegation({ constraints: { scopes: ['tool:execute'], audience } }) });
+      await expect(buildOutboundDelegationHeaders(context)).resolves.toHaveProperty('KYA-OS-Delegation-Proof');
+    }
   });
 
   it('throws for non-did:key server DID', async () => {

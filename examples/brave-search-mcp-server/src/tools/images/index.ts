@@ -3,7 +3,7 @@ import params, { type QueryParams } from './schemas/input.js';
 import API from '../../BraveAPI/index.js';
 import type { ImageResult } from './types.js';
 import OutputSchema, { SimplifiedImageResultSchema } from './schemas/output.js';
-import { z } from 'zod';
+import * as z from 'zod';
 import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 export const name = 'brave_image_search';

@@ -1,10 +1,12 @@
 /**
- * A pinned root's own status list may live on a private host, as an internal registry's does. The
- * URL is the root's word once the root credential's proof has verified, so the shipped checker then
- * reads it as a URL the operator named, on any host, through SafeFetch, still pinned. Before that,
- * and wherever the proof did not verify or was not checked, the URL is only what whoever presented
- * the chain wrote, and SafeFetch refuses its private host before any connection. A list URL
- * `statusListIssuers` binds is the operator's own as well.
+ * A pinned root's own status list may live on a private host, as an internal registry's does, when
+ * that host is the root's own: the https origin, host and port, its did:web DID names. The URL is
+ * the root's word once the root credential's proof has verified, so the shipped checker then reads
+ * it as a URL the operator named, through SafeFetch, still pinned. A list on any other private host,
+ * and any list of a root with no host of its own, such as a did:key root, is held to the
+ * private-network rule as a URL a presenter names, unless `statusListIssuers` binds it. Before the
+ * proof has verified, and wherever it did not verify or was not checked, the URL is only what
+ * whoever presented the chain wrote, and SafeFetch refuses its private host before any connection.
  *
  * Every hop and list is signed by a real key and checked by the shipped verifiers. Only DNS and the
  * connection are faked: every name under `corp.example` resolves to a private address, and the
@@ -12,7 +14,6 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import { createSafeFetch, type DnsLookup, type SafeFetchTransport } from '../../utils/safe-fetch.js';
 import type { StatusCheckContext } from '../../utils/statuslist-keeper.js';
 import { evaluateDelegationChain, type DelegationChain } from '../delegation.js';
@@ -22,12 +23,37 @@ import { createRevocationChecker } from '../revocation.js';
 import type { EntityCard } from '../schema.js';
 import { createStatusListProofVerifier } from '../status-list-proof.js';
 import { verifyCard } from '../verify.js';
-import { hop, now, parties, RESOURCE, statusList, type ChainParties, type TestIdentity } from './signed-chain-helpers.js';
+import {
+  hop,
+  identity,
+  now,
+  parties as didKeyParties,
+  resolverServing,
+  RESOURCE,
+  statusList,
+  webIdentity,
+  type ChainParties,
+  type TestIdentity,
+} from './signed-chain-helpers.js';
 
-const didResolver = createDidKeyResolver();
 const PRIVATE = '10.0.0.7';
+/** The pinned root's own host, which its did:web DID names. */
+const ROOT_DID = 'did:web:lists.corp.example';
 const ROOT_LIST = 'https://lists.corp.example/acme';
 const AGENT_LIST = 'https://lists.corp.example/agent';
+/** A private host that is not the root's own. */
+const REGISTRY_LIST = 'https://registry.corp.example/acme';
+
+/** The did:web roots the tests make, whose documents the resolver serves, the newest first, since several share a DID. */
+const webRoots: TestIdentity[] = [];
+const didResolver = resolverServing(webRoots);
+
+/** Acme, the root, as the did:web DID `rootDid` (by default one on {@link ROOT_LIST}'s host), and two did:key delegates. */
+function parties(rootDid = ROOT_DID): ChainParties {
+  const acme = webIdentity(rootDid);
+  webRoots.unshift(acme);
+  return { ...didKeyParties(), acme };
+}
 
 /** The list at `url` that `signer` signed, with `revoked` bits set. */
 const listAt = (signer: TestIdentity, url: string, revoked: number[] = []) =>
@@ -116,7 +142,7 @@ describe("a pinned root's own list on a private host", () => {
 
   it('makes no connection for a forged root: a credential claiming the pinned root names a private list, and its proof fails', async () => {
     const p = parties();
-    const forger = parties().acme;
+    const forger = identity();
     const net = network({ [ROOT_LIST]: listAt(p.acme, ROOT_LIST) });
     const forged = chainOn(p, ROOT_LIST, ROOT_LIST, forger);
     const verdict = await evaluateDelegationChain(forged, net.checker(), { resource: RESOURCE, now, resourceOwner: p.acme.did, verifyHopProof });
@@ -127,6 +153,47 @@ describe("a pinned root's own list on a private host", () => {
     );
     expect(request).toMatchObject({ ok: false, code: 'delegation_invalid', refusalCode: 'invalid_proof' });
     expect({ connected: net.connected, looked: net.looked }).toEqual({ connected: [], looked: [] });
+  });
+
+  it.each([
+    ['a did:key root, which has no host of its own', () => didKeyParties(), ROOT_LIST],
+    ["a did:web root, on a private host other than its own", () => parties(), REGISTRY_LIST],
+    ["a did:web root, on its own host name at another port", () => parties(), 'https://lists.corp.example:8443/acme'],
+    ["a did:web root with a port, on its own host name at the default port", () => parties('did:web:lists.corp.example%3A8443'), ROOT_LIST],
+    ['a did:web root, on a host under its own', () => parties(), 'https://status.lists.corp.example/acme'],
+  ])('refuses the list of %s before any connection, its proof verified', async (_case, cast, url) => {
+    const p = cast();
+    const net = network({ [url]: listAt(p.acme, url) });
+    const chain = chainOn(p, url, url);
+    const verdict = await evaluateDelegationChain(chain, net.checker(), { resource: RESOURCE, now, resourceOwner: p.acme.did, verifyHopProof });
+    expect(verdict).toMatchObject({ ok: false, code: 'status_unavailable', reasons: [expect.stringMatching(/^revocation: hop 0 /)] });
+    const request = await verifyRequestDelegation(
+      { meta: toDelegationChainMeta(chain), proofDid: p.subAgent.did, action: 'orders.place' },
+      { resource: RESOURCE, now, trustedRootIssuers: [p.acme.did], verifyHopProof, checkRevocation: net.checker() },
+    );
+    expect(request).toMatchObject({ ok: false });
+    expect(net.connected).toEqual([]);
+  });
+
+  it.each([
+    ['its own host and port, which its DID names', 'did:web:lists.corp.example%3A8443', 'https://lists.corp.example:8443/acme'],
+    ['its own host, whatever path its DID names', 'did:web:lists.corp.example:tenants:acme', ROOT_LIST],
+  ])('reads the list of a did:web root on %s', async (_case, rootDid, url) => {
+    const p = parties(rootDid);
+    const net = network({ [url]: listAt(p.acme, url) });
+    const verdict = await evaluateDelegationChain(chainOn(p, url, url), net.checker(), { resource: RESOURCE, now, resourceOwner: p.acme.did, verifyHopProof });
+    expect(verdict).toMatchObject({ ok: true, fresh: true });
+    expect(net.connected).toEqual([[url, PRIVATE], [url, PRIVATE]]);
+  });
+
+  it('reads the list of a did:key root, or of a root on another host, that statusListIssuers binds', async () => {
+    for (const [p, url] of [[didKeyParties(), ROOT_LIST], [parties(), REGISTRY_LIST]] as const) {
+      const net = network({ [url]: listAt(p.acme, url) });
+      const checker = net.checker({ statusListIssuers: { [p.acme.did]: [url] } });
+      const verdict = await evaluateDelegationChain(chainOn(p, url, url), checker, { resource: RESOURCE, now, resourceOwner: p.acme.did, verifyHopProof });
+      expect(verdict).toMatchObject({ ok: true, fresh: true });
+      expect(net.connected).toEqual([[url, PRIVATE], [url, PRIVATE]]);
+    }
   });
 
   it("refuses a hop's own private list before any connection, the root's proof verified or not", async () => {

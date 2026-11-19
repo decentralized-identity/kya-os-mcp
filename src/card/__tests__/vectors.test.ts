@@ -121,12 +121,14 @@ describe('conformance vector: card-proof.json (org.kya-os/proof.v1)', () => {
     const res = await verifyCardProof(proof, request, proofDeps());
     // The vector proof carries a cnf; with no token cnf wired it degrades to L3-minus and surfaces
     // the non-fatal unfused-cnf warning (TM-1). The pass/fail conformance outcome is unaffected.
+    // The golden proof states that its call presents no delegation (SPEC.md §7.8).
     expect(res).toEqual({
       ok: true,
       reasons: [],
       level: 'L3-minus',
       did: proof.did,
       warnings: ['cnf_present_but_token_unfused'],
+      statedDelegation: { kind: 'none' },
     });
   });
 

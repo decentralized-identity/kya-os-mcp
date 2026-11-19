@@ -1,0 +1,186 @@
+import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import type { AuditHasher, AuditSignatureVerifier, AuditSigner } from './crypto.js';
+import { AUDIT_ERROR_CODES, AuditProtocolError } from './errors.js';
+import {
+  buildAuditRecorderReceiptCore,
+  digestAuditEntry,
+  digestAuditEvent,
+  digestAuditEvidenceManifest,
+} from './integrity.js';
+import { sameSigner } from './key-trust.js';
+import type { AuditLedgerRef, DecimalString, SignedAuditEntryV1, SignerRef } from './types.js';
+import { didKeyVerifierOf } from './signer-did-key.js';
+import { warnJournalTrustedAsWritten, warnUnverifiedRecorderKey } from './unverified-recorder-keys.js';
+
+/** What a stored entry is checked with before the recorder or a checkpoint builds on it. */
+export interface StoredAuditEntryVerification {
+  hasher: AuditHasher;
+  signatures: AuditSignatureVerifier;
+  /**
+   * Set when `signatures` was derived from this signer's own key, the one key
+   * it can check. A checkpoint builder over an epoch whose genesis names
+   * another key then trusts that epoch's leaves as written, with a warning.
+   */
+  ownKey?: SignerRef;
+}
+
+/**
+ * Whether `entry`, as a journal returned it, is one its recorder made for
+ * `ledger`: it belongs to that ledger epoch, its event, evidence-manifest and
+ * entry digests recompute from its core, its receipt core is the one built for
+ * that core, and the receipt's signature verifies under the recorder the core
+ * names. A party that can write the journal store, and holds no recorder key,
+ * cannot make an entry that passes. A verifier that throws is not caught: the
+ * caller tells a failure to verify from an entry that does not verify.
+ */
+export async function verifyStoredAuditEntry(
+  entry: SignedAuditEntryV1,
+  ledger: AuditLedgerRef,
+  { hasher, signatures }: StoredAuditEntryVerification,
+): Promise<boolean> {
+  const { core } = entry;
+  if (core.ledgerId !== ledger.ledgerId || core.ledgerEpochId !== ledger.ledgerEpochId) return false;
+  const eventDigest = await digestAuditEvent(hasher, core.event);
+  if (eventDigest !== core.eventDigest || eventDigest !== entry.eventDigest) return false;
+  if (await digestAuditEvidenceManifest(hasher, core.event) !== core.evidenceManifestDigest) return false;
+  if (await digestAuditEntry(hasher, core) !== entry.entryDigest) return false;
+  if (canonicalizeJson(buildAuditRecorderReceiptCore(core, entry.entryDigest)) !==
+    canonicalizeJson(entry.recorderReceipt.core)) return false;
+  return (await signatures.verify(
+    canonicalizeJsonBytes(entry.recorderReceipt.core),
+    entry.recorderReceipt.jws,
+    core.recorder,
+  )) === true;
+}
+
+/**
+ * Refuses, with `AUDIT_JOURNAL_FAILURE` naming `sequence`, to build on the
+ * stored entry at `sequence` unless `verified` answers true. A verifier or a
+ * journal read that throws is the refusal's cause.
+ */
+export async function requireStoredAuditEntry(
+  sequence: DecimalString,
+  verified: () => Promise<boolean>,
+): Promise<void> {
+  let answer: boolean;
+  try {
+    answer = await verified();
+  } catch (error) {
+    throw new AuditProtocolError(
+      AUDIT_ERROR_CODES.JOURNAL_FAILURE,
+      'Audit journal entry could not be verified as one its recorder signed',
+      { sequence },
+      { cause: error },
+    );
+  }
+  if (!answer) {
+    throw new AuditProtocolError(
+      AUDIT_ERROR_CODES.JOURNAL_FAILURE,
+      'Audit journal entry is not one its recorder signed',
+      { sequence },
+    );
+  }
+}
+
+/**
+ * Refuses, as {@link requireStoredAuditEntry} does, unless each of `entries`,
+ * a ledger epoch from its genesis, from index `from` chains to the entry
+ * before it, names the recorder key the genesis names, and verifies as one
+ * that recorder signed. A recorder signs every entry of an epoch, its genesis
+ * included, under one key, so an entry under any other is refused.
+ * A verifier derived from the builder's own key cannot check another key, as
+ * a recorder with a key of its own signs under: when the genesis names
+ * another key, the epoch's leaves are trusted as written, as before such a
+ * verifier, and {@link warnUnverifiedRecorderKey} names that key. Only
+ * `signatures` given explicitly verifies them.
+ * The genesis digest is recomputed from its core on every call, whatever
+ * `from` is, so the key it names is the one the latest checkpoint's root
+ * covers, and so is the digest of each leaf trusted as written: a journal
+ * writer cannot choose the key, nor change a trusted leaf under its digest.
+ */
+export async function requireStoredAuditLeaves(
+  entries: readonly SignedAuditEntryV1[],
+  from: number,
+  ledger: AuditLedgerRef,
+  verification: StoredAuditEntryVerification,
+): Promise<void> {
+  const genesis = entries[0];
+  if (genesis === undefined || from >= entries.length) return;
+  const { hasher, ownKey } = verification;
+  await requireStoredAuditEntry(genesis.core.sequence, () => digestRecomputes(genesis, hasher));
+  const recorder = genesis.core.recorder;
+  const trusted = ownKey !== undefined && !sameSigner(recorder, ownKey);
+  if (trusted) warnUnverifiedRecorderKey(recorder);
+  for (let index = from; index < entries.length; index += 1) {
+    const entry = entries[index]!;
+    const chained = entry.core.previousEntryDigest === (entries[index - 1]?.entryDigest ?? null);
+    await requireStoredAuditEntry(entry.core.sequence, async () =>
+      chained && sameSigner(entry.core.recorder, recorder) &&
+      (trusted ? digestRecomputes(entry, hasher) : verifyStoredAuditEntry(entry, ledger, verification)));
+  }
+}
+
+/** Whether `entry`'s digest recomputes from its core, so its core is the one a tree over that digest covers. */
+async function digestRecomputes(entry: SignedAuditEntryV1, hasher: AuditHasher): Promise<boolean> {
+  return await digestAuditEntry(hasher, entry.core) === entry.entryDigest;
+}
+
+/** What the recorder or a checkpoint builder signs with, and any verifier it was given. */
+export interface StoredAuditEntryVerifierConfig {
+  hasher: AuditHasher;
+  signer: AuditSigner;
+  signatures?: AuditSignatureVerifier;
+}
+
+/**
+ * How the recorder or a checkpoint builder that signs with `signer` checks the
+ * stored entries it builds on: with `signatures` when it was given one, else
+ * with the verifier its signer derives from its own key, else not at all, and
+ * the journal is trusted as written. The signer is asked once, and asked
+ * again only after it failed to answer.
+ */
+export class StoredAuditEntryVerifier {
+  private derived?: Promise<StoredAuditEntryVerification | undefined>;
+
+  constructor(private readonly config: StoredAuditEntryVerifierConfig) {}
+
+  /**
+   * The verification to apply, or undefined when there is none. A signer that
+   * fails to derive its verifier is refused with `AUDIT_INVALID_CONFIGURATION`,
+   * so nothing is built on the journal unchecked for want of an answer.
+   */
+  async verification(): Promise<StoredAuditEntryVerification | undefined> {
+    const { hasher, signatures } = this.config;
+    if (signatures !== undefined) return { hasher, signatures };
+    const pending = this.derived ?? this.derive();
+    this.derived = pending;
+    try {
+      return await pending;
+    } catch (error) {
+      if (this.derived === pending) this.derived = undefined;
+      throw error;
+    }
+  }
+
+  private async derive(): Promise<StoredAuditEntryVerification | undefined> {
+    const { hasher, signer } = this.config;
+    let signatures: AuditSignatureVerifier | undefined;
+    try {
+      signatures = await signer.verifier?.();
+    } catch (error) {
+      throw new AuditProtocolError(
+        AUDIT_ERROR_CODES.INVALID_CONFIGURATION,
+        'The audit signer could not derive a verifier of its own signatures',
+        undefined,
+        { cause: error },
+      );
+    }
+    // A signer whose key yields no public key may still name the Ed25519 did:key it signs with.
+    signatures ??= await didKeyVerifierOf(signer);
+    if (signatures === undefined) {
+      warnJournalTrustedAsWritten();
+      return undefined;
+    }
+    return { hasher, signatures, ownKey: signer.ref };
+  }
+}

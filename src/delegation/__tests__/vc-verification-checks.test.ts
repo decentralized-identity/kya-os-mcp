@@ -13,6 +13,7 @@ import { issuerDidDocument, methodOf } from "../../__tests__/utils/did-documents
 import { WRAPPED_REASON_LENGTH } from "../../utils/revocation-answer.js";
 import { RefusalError } from "../../utils/refusal.js";
 import { logger } from "../../logging/index.js";
+import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 const ISSUER = "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
 
@@ -114,6 +115,28 @@ describe("validateBasicProperties: validity bounds and status fail closed", () =
     expect(validateBasicProperties(withConstraints({ notBefore: nowSec + 60 })).valid).toBe(false);
   });
 
+  it("treats a credential as not yet valid before its issuanceDate, held with the clock tolerance", () => {
+    const issuedIn = (ms: number) => new Date(Date.now() + ms).toISOString();
+    const notYetValid = { valid: false, reason: "Delegation credential not yet valid", code: "delegation_not_yet_valid", transient: false };
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(30 * 24 * 60 * 60 * 1000) }))).toEqual(notYetValid);
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(125_000) }))).toEqual(notYetValid);
+    // Signed a moment ago by an issuer whose clock runs a minute ahead of the verifier's.
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(60_000) }))).toEqual({ valid: true });
+    expect(validateBasicProperties(credential({ issuanceDate: issuedIn(-60_000) }))).toEqual({ valid: true });
+  });
+
+  it("treats an issuanceDate that is not an RFC 3339 date-time with its zone as not yet valid", () => {
+    for (const issuanceDate of ["next month", "2026-01-01T00:00:00", "2026-01-01", "2026-02-30T00:00:00Z"]) {
+      expect(validateBasicProperties(credential({ issuanceDate })), issuanceDate).toEqual({
+        valid: false,
+        reason: "Delegation credential not yet valid",
+        code: "delegation_not_yet_valid",
+        transient: false,
+      });
+    }
+    expect(validateBasicProperties(credential({ issuanceDate: "2025-12-31T18:00:00-06:00" }))).toEqual({ valid: true });
+  });
+
   it("passes only an active delegation", () => {
     expect(validateBasicProperties(credential())).toEqual({ valid: true });
     for (const [status, reason, code] of [
@@ -163,6 +186,32 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     }
   });
 
+  it("refuses a credentialSubject id that is not a URL as an issuer's must be, and quotes it", () => {
+    const refusals: [string, string][] = [
+      ["did:web:agent.example\n[kya-os] any issuer is accepted", '"did:web:agent.example\\n[kya-os] any issuer is accepted"'],
+      ["did:key:z6MkAgent‮", '"did:key:z6MkAgent\\u202e"'],
+      ["did:key:z6Mk​Agent", '"did:key:z6Mk\\u200bAgent"'],
+      [" did:key:z6MkAgent", '" did:key:z6MkAgent"'],
+      ["agent-7", '"agent-7"'],
+      [long, cutLong],
+    ];
+    for (const [id, named] of refusals) {
+      const vc = credential();
+      vc.credentialSubject.id = id;
+      expect(validateBasicProperties(vc), id).toEqual({
+        valid: false,
+        reason: `Credential subject id ${named} is not a URL`,
+        code: "delegation_malformed",
+        transient: false,
+      });
+    }
+    for (const id of ["did:web:agent.example:agents:7", "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK", "urn:uuid:7"]) {
+      const vc = credential();
+      vc.credentialSubject.id = id;
+      expect(validateBasicProperties(vc), id).toEqual({ valid: true });
+    }
+  });
+
   it("quotes the type and purpose of a status entry its resolver reads as revoked", async () => {
     const status = { type: long, statusPurpose: "revocation\uD800" } as unknown as CredentialStatus;
     expect(await checkCredentialStatus(status, { checkStatus: async () => true }, ISSUER)).toMatchObject({
@@ -197,7 +246,7 @@ describe("refusal reasons quote what the credential chose as describeValue does"
     expect(await checkCredentialStatus(credentialStatus("revocation"), resolver, ISSUER)).toEqual({
       valid: false,
       outcome: "status_unresolvable",
-      reason: 'Status check error: the status list at "https://status.example/1" could not be read or checked',
+      reason: `Status check error: the status list at "https://status.example/1" could not be read or checked${WITHHELD_SUFFIX}`,
       code: "status_unavailable",
       transient: true,
       durationMs: expect.any(Number),
@@ -243,7 +292,7 @@ describe("verifySignature: fail-closed paths", () => {
     };
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
     const result = await verifySignature(credential(), resolver, signatureVerifier);
-    expect(result).toMatchObject({ valid: false, reason: "Signature verification error: the signature could not be checked", code: "runtime_error" });
+    expect(result).toMatchObject({ valid: false, reason: `Signature verification error: the signature could not be checked${WITHHELD_SUFFIX}`, code: "runtime_error" });
     warn.mockRestore();
   });
 });

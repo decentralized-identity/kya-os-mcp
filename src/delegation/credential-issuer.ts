@@ -39,7 +39,7 @@ export function credentialIssuerRefusal(credential: DelegationCredential): strin
 
 /**
  * Whether `value` names an issuer as a URL as it stands, the rule for a credential's issuer and a
- * VC-JWT's `iss`: a string the WHATWG URL parser parses against no base without first cleaning it,
+ * VC-JWT's `iss`, and for the id of a delegation credential's subject: a string the WHATWG URL parser parses against no base without first cleaning it,
  * with nothing in it that reads as another character or as none. The parser removes leading and
  * trailing C0 controls and spaces, and every ASCII tab, CR and LF, before it parses, so a string
  * with white space at either end, as `trim` removes it, is not one. The parser accepts the

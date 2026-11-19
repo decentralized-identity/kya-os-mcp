@@ -3,8 +3,8 @@
  * tasks under other keys run alongside them, and a task that fails holds up none after it.
  */
 
-import { describe, expect, it } from 'vitest';
-import { KeyedLock } from '../keyed-lock.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { KeyedLock, keyedLockOf } from '../keyed-lock.js';
 
 /** A promise and the function that settles it. */
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -64,5 +64,62 @@ describe('KeyedLock', () => {
     await expect(failing).rejects.toThrow('store unreachable');
     await expect(thrownAtOnce).rejects.toThrow('thrown before a promise');
     expect(await next).toBe('ran');
+  });
+});
+
+describe('KeyedLock: a bounded wait for a turn', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('rejects with the error it names once the wait is over, never runs the task, and holds up none after it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const lock = new KeyedLock();
+    const holderMayEnd = deferred();
+    const ran: string[] = [];
+    const holder = lock.run('node', async () => {
+      ran.push('holder');
+      await holderMayEnd.promise;
+    });
+    const late = lock.run('node', async () => void ran.push('late'), { ms: 1_000, expired: () => new Error('no turn') });
+    const after = lock.run('node', async () => void ran.push('after'));
+    const lateSettled = late.then(() => 'ran', (error: Error) => error.message);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await lateSettled).toBe('no turn');
+    holderMayEnd.resolve();
+    await holder;
+    await after;
+    expect(ran).toEqual(['holder', 'after']);
+  });
+
+  it('runs the task, and clears its timer, when the turn comes in time', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const lock = new KeyedLock();
+    const answer = lock.run('node', async () => 'ran', { ms: 1_000, expired: () => new Error('no turn') });
+    expect(await answer).toBe('ran');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('forgets a key once a task that gave up and every task before it have settled', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const lock = new KeyedLock();
+    const holderMayEnd = deferred();
+    const holder = lock.run('node', () => holderMayEnd.promise);
+    const late = lock.run('node', async () => undefined, { ms: 10, expired: () => new Error('no turn') });
+    late.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(10);
+    holderMayEnd.resolve();
+    await holder;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect((lock as unknown as { tails: Map<string, unknown> }).tails.size).toBe(0);
+  });
+});
+
+describe('keyedLockOf', () => {
+  it('gives every caller over one object the same lock, and callers over another object their own', () => {
+    const store = {};
+    expect(keyedLockOf(store)).toBe(keyedLockOf(store));
+    expect(keyedLockOf({})).not.toBe(keyedLockOf(store));
   });
 });

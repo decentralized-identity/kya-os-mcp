@@ -402,9 +402,9 @@ denied; **resolve-once-and-pin** the connection IP (closing the DNS-rebinding TO
 **timeout**. The reference implementation (`src/utils/safe-fetch.ts`) defaults to a 1 MiB cap, a
 5 s timeout, and ≤3 same-origin redirects.
 
-A status list the Verifier's own configuration names is the exception, since no attacker chose it, and so is the list a root the Verifier pins names in its own credential once that credential's proof has verified (SPEC.md §4.4.2).
+A status list the Verifier's own configuration names is the exception, since no attacker chose it, and so is the list a root the Verifier pins names in its own credential once that credential's proof has verified, where that list is at the root's own did:web origin (SPEC.md §4.4.2, §6.6).
 A responsible party is such a root only when the Verifier's configuration pins it, not on an accountability verdict alone, since a Verifier that accepts any root lets the presenter be one.
-A Verifier MAY read such a list on any host, still pinned: one at a URL or https origin its `statusListIssuers` binds, or the pinned root's own.
+A Verifier MAY read such a list on any host, still pinned: one at a URL or https origin its `statusListIssuers` binds, or the pinned root's own at that root's own did:web origin.
 It reads http only at an exact http URL its `statusListIssuers` binds, since over http an on-path party can replay an older signed list from before a revocation, and a redirect from any of them is held to every rule above.
 A redirect from such a URL is held to every rule above.
 
@@ -580,6 +580,15 @@ header's `alg` MUST equal the proof `alg` and its `kid` the proof `kid`; and ver
 that single `alg`. The payload is RECOMPUTED from the covered claims (JCS), so any tampered covered
 field (including `alg`) yields a different signing input and fails.
 
+**The delegation statement.**
+The delegation chain a request carries rides `params._meta` (§10.5), outside `requestHash`, so the covered claims say nothing of it, and a proof would be good beside any chain whose leaf names its DID.
+A minter therefore MUST state, as the protected header parameter `org.kya-os/delegation`, the delegation its request carries: the credential digest SPEC.md §7.8 gives the last credential of the carried chain, written as `sha256:` and 64 lowercase hex digits, or the string `none` for a request that carries no chain.
+The protected header is part of the JWS signing input, so the signature covers the statement, and a Verifier that does not know the parameter ignores it (RFC 7515 §4) and verifies the proof as before.
+It is no covered claim and no member of the proof object: a Verifier reads it from the protected header, and only once the signature over that header has verified (§11.2 step 9).
+The leaf's digest covers the `parentCredentialDigest` it states (SPEC.md §6.10), so a chain each of whose hops states its parent is fixed by the statement alone.
+The rules for a holder and a Verifier are those of SPEC.md §7.8, and §11.4 step 3 applies them to the chain.
+The reference implementation's `buildCardProof` makes the statement from the request it is given, with no further input.
+
 ### 8.5 RFC 9421 HTTP Message Signature sibling (dual carrier)
 
 The proof MAY additionally carry `httpSig`: a **RAW EdDSA or ES256 signature** (base64url, NOT
@@ -601,6 +610,9 @@ where `alg` follows RFC 9421 naming for the proof's `alg`: `ed25519` for an EdDS
 reconstructs this base and verifies `httpSig` against the resolved DID key with zero new code. A
 signer without a raw-signature seam mints a JWS-only proof and the sibling simply degrades away
 (never a failure).
+
+The signature base carries no delegation statement (§8.4): a JWS protected header has no counterpart in it.
+A party that verifies `httpSig` alone therefore holds a carried chain to the leaf join only (§12.11), and a Verifier that authorizes by delegation MUST verify the detached JWS.
 
 ### 8.6 `cnf.jkt` fusion (RFC 9449 + RFC 7638) - the spine
 
@@ -846,6 +858,7 @@ This is the cross-organizational case: a resource server can verify an agent act
 4. **Binding to the request.** The member sits inside `params._meta`, so `requestHash` does not cover it (§8.3).
    It is bound to the request by the leaf join of §10.2 instead: the leaf hop's delegate MUST equal the verified `proof.did`.
    A carried chain therefore authorizes nothing for a caller that does not hold the leaf key.
+   It is bound to this request's proof by the delegation statement of §8.4: the proof names the chain's last credential by its digest, and a Verifier holds the chain to that statement (§11.4 step 3).
    §12.11 covers what an on-path party can and cannot do by replacing it.
 5. **Revocation.** A carried chain is checked for revocation exactly as a resolved one: every hop's `credentialStatus` is read root to leaf, cascading and fail-closed (§10.3).
    Carrying a chain does not freeze it.
@@ -910,12 +923,14 @@ than erroring open.
    is ABSENT there is no replay defense to run, so a verifier MUST fail closed with
    `nonce_seam_missing` rather than skip the check (mirrors step 4's seam-absent posture).
 9. Detached JWS verifies over the recomputed covered claims (§8.4), else `invalid_signature`.
+   The delegation statement of the protected header that verified (§8.4) is then read: one that is neither a credential digest nor `none` ⇒ `delegation_statement_malformed`.
 10. **`cnf` fusion** (§8.6) → level: a present `cnf.jkt ≠` key thumbprint ⇒ `cnf_key_mismatch`; no
     token `cnf` ⇒ `L3-minus`; token `cnf` but no proof `cnf` ⇒ `cnf_required_by_token`; `cnf.jkt ≠
     token cnf` ⇒ `cnf_token_mismatch`; all fuse ⇒ `L3`.
 
 `ok` is true iff there are no reasons; on success the result carries the derived assurance
-(`L3` / `L3-minus`) and the accountable `did`.
+(`L3` / `L3-minus`), the accountable `did`, and what the proof states of its delegation (§8.4): a
+credential digest, `none`, or nothing.
 
 ### 11.3 Fail-closed demotion matrix
 
@@ -941,6 +956,11 @@ A Verifier that authorizes a call by delegation runs these steps after §11.2 su
    A resolved chain is schema-checked like a carried one.
 2. **Chain rules.** The chain satisfies SPEC.md §6.10 against the Verifier's own identity as the expected resource (and the resource owner, when one is configured), else `delegation_invalid`.
 3. **Leaf join.** The leaf delegate equals `proof.did` (§10.2), else `delegation_invalid`.
+   The chain is then held to the delegation statement of the verified proof (§8.4, SPEC.md §7.8).
+   A proof that states the digest of a credential authorizes only a chain whose last credential has that digest, carried or resolved, else `delegation_invalid`.
+   A proof that names no credential, stating nothing or stating `none` beside a carried chain, SHOULD be refused as `delegation_invalid`; during the transition a Verifier MAY accept it, and one that does MUST NOT report the chain as named by the caller.
+   A proof that states `none` holds beside a chain the Verifier resolved by reference, since the request carried none.
+   Version 2.0.0 of this specification makes the refusal a MUST.
 4. **Trusted roots.** When the Verifier configures trusted root issuers, `issuer(rootVC)` is one of them, else `delegation_invalid`.
 5. **Hop signatures.** Root to leaf, each hop's proof verifies (§10.5 rule 3); a failing or throwing check ⇒ `delegation_invalid`.
 6. **Action.** The invoked action is in the leaf's `allowedAction`, else `action_not_delegated`.
@@ -949,6 +969,8 @@ A Verifier that authorizes a call by delegation runs these steps after §11.2 su
 Steps 2-4 are local; step 5 may resolve DIDs; step 7 fetches status lists.
 The order keeps a Verifier from spending network work on a chain a local check already rejects.
 On success the Verifier holds the recomputed `responsibleParty`, the leaf invoker, the leaf's granted actions, the chain depth, whether every status read was live, and the caveats every call under the chain must be held to (SPEC.md §6.10).
+It also holds whether the proof named the chain's last credential, and whether every hop but the root states its parent's digest, which together say whether the caller's signature fixes the whole chain.
+The reference implementation takes a proof that names no credential under `requestBinding: 'prefer'`, its default through 1.x, with one warning, and refuses it under `'require'`.
 A rejection with `delegation_missing` is 401-shaped, so a server MAY answer it with a consent step-up (SPEC.md §9); every other code is 403-shaped (Appendix D.5).
 
 ---
@@ -1066,11 +1088,14 @@ redirects, size/time caps. Residual: standard transport-layer DoS is out of scop
 | did:web DNS | DNSSEC/CAA + key-pin + `alsoKnownAs` (§12.8) | DNS+TLS trust floor |
 | SSRF | mandatory SafeFetch (§12.9) | transport-layer DoS |
 | did:key revocation via unauthenticated discovery | `did:web` REQUIRED for revocable Entities (§12.6) | `did:key` is self-asserted, non-revocable through unauthenticated discovery |
-| Carried-chain substitution | leaf join + a distinct key per delegation (§12.11) | attribution swap where one key leads several chains |
+| Carried-chain substitution | the proof's delegation statement (§8.4) + leaf join + a distinct key per delegation (§12.11) | a proof that names no credential, where a Verifier still accepts one: attribution swap where one key leads several chains |
 
 ### 12.11 Carried-chain substitution
 
 A carried chain (§10.5) is outside `requestHash` (§8.3), so an on-path party can replace it.
+The proof's delegation statement (§8.4) is what refuses the replacement: the proof names the last credential of the chain the caller chose by its digest, the replacement's last credential has another, and a Verifier that holds the chain to the statement rejects it (§11.4 step 3).
+Where every hop states `parentCredentialDigest` (SPEC.md §6.10), the same statement fixes the hops above the leaf, so no ancestor can be replaced either.
+A proof that names no credential leaves the leaf join as the only limit, and a Verifier MAY still accept one during the transition (§11.4).
 The leaf join limits what a replacement can do: it must be a valid chain whose leaf is the caller's own key, so it can grant only authority the caller already holds.
 Where one key is the leaf of more than one chain, for example delegations from two organizations, a replacement can change which Responsible Party a call is attributed to.
 Callers SHOULD hold a distinct key per delegation (SPEC.md §6.9), which leaves one chain per key and nothing to substitute.
@@ -1348,6 +1373,7 @@ Codes are snake_case, aligned to the implementation.
 | `nonce_seam_missing` | No `consumeNonceIfFresh` seam supplied - replay freshness cannot be verified, so fail closed. |
 | `alg_key_mismatch` | Proof `alg` (`EdDSA` \| `ES256`) does not match the resolved signing key type (Ed25519 / P-256). |
 | `invalid_signature` | The detached JWS did not verify under the pinned `alg`. |
+| `delegation_statement_malformed` | The protected header that verified states its delegation (§8.4) as neither a credential digest nor `none`. |
 | `cnf_key_mismatch` | Proof `cnf.jkt` ≠ the signing key thumbprint. |
 | `cnf_required_by_token` | Token supplied a `cnf` but the proof carries none (downgrade). |
 | `cnf_token_mismatch` | Proof `cnf.jkt` ≠ the token `cnf.jkt`. |
@@ -1366,7 +1392,10 @@ Codes are snake_case, aligned to the implementation.
 `validateDelegationChain` / `evaluateDelegationChain` emit human-readable reasons for: allowedAction
 escalation, caveat broadening/dropping, `validUntil` broadening, broken continuity (parent invoker ≠
 child issuer; child `parentCapability` ≠ parent id), `invocationTarget` drift, a chain longer than
-the verifier's `maxChainLength` when it sets one, and root mismatches (SPEC.md §6.10). `evaluateRevocationChain` emits a fail-closed reason per revoked /
+the verifier's `maxChainLength` when it sets one, and root mismatches, a root that states a
+`parentCredentialDigest` among them (SPEC.md §6.10). `evaluateDelegationChain` and
+`verifyRequestDelegation` also emit one for a hop whose `parentCredentialDigest` is not the digest
+of the hop before it. `evaluateRevocationChain` emits a fail-closed reason per revoked /
 unresolvable hop (§10.3). `verifyCimdBind` emits origin-mismatch and missing-`alsoKnownAs` reasons
 (§7.4).
 
@@ -1381,7 +1410,7 @@ Retained for the legacy session-bound path (§15.5): `handshake_failed`, `sessio
 |------|-------|---------|
 | `delegation_missing` | 401 | The request carries no chain and none was resolved by reference. A server MAY answer with a consent step-up. |
 | `delegation_unresolvable` | 403 | By-reference resolution failed: the registry was unreachable or refused. |
-| `delegation_invalid` | 403 | The chain is malformed or over the length bound, breaks the SPEC.md §6.10 rules, names another leaf delegate, has an untrusted root, or a hop's proof does not verify. |
+| `delegation_invalid` | 403 | The chain is malformed or over the length bound, breaks the SPEC.md §6.10 rules, names another leaf delegate, is not the one the request proof states (§8.4), has an untrusted root, or a hop's proof does not verify. |
 | `action_not_delegated` | 403 | The leaf does not grant the invoked action. |
 | `delegation_revoked` | 403 | A hop is revoked, or its status could not be proven (fail-closed). |
 

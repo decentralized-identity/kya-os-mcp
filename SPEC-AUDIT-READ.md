@@ -59,9 +59,11 @@ Stepping the cursor from the start MUST reconstruct the ledger exactly, with no 
 
 ### 2.3 getInclusionProof
 
-Returns a self-contained Merkle inclusion proof binding one entry to the latest checkpoint's signed root.
+Returns a Merkle inclusion proof binding one entry's digest to the latest checkpoint's signed root.
 The request names the entry by `sequence`.
 The response is an `AuditBundleInclusionProofV1` carrying the ledger ref, the entry's `sequence` and `entryDigest`, the `checkpointDigest`, and the raw Merkle proof.
+It carries the entry's digest, not the entry, and a client verifies the entry before it relies on the proof (Section 4).
+A client fetches the entry with `listEntries`, giving `afterSequence` one below the proof's `sequence`, or no `afterSequence` for sequence `0`, and `limit` 1, and takes the one entry returned only if its `sequence` is the proof's.
 An implementation MUST reject the request when no checkpoint exists for the ledger, or when the sequence is not covered by the latest checkpoint.
 
 ### 2.4 getConsistencyProof
@@ -95,8 +97,14 @@ This profile assumes the "verify twice" model.
 A serving implementation MAY assert its own verification result to a client, but a conforming client MUST be able to independently re-verify.
 
 A client re-verifies a `listEntries` response by validating the response envelope, then verifying the embedded entries against a trust policy: signatures, digests, and chain continuity.
-A client re-verifies an inclusion proof by confirming the entry's `entryDigest`, then checking that the proof's Merkle path closes to the `rootDigest` of the named, signature-verified checkpoint.
+A client re-verifies an inclusion proof by verifying the entry the proof names as it verifies an entry of a `listEntries` response, its digests and its recorder receipt signature against the trust policy, and confirming that its `entryDigest` is the one the proof names; then by checking that the proof's Merkle path closes to the `rootDigest` of the named, signature-verified checkpoint.
+A client MUST NOT accept an entry on the inclusion proof alone.
+A checkpoint commits to the leaves its journal held when it was signed, so the proof shows that a digest is in a signed tree, not that the recorder made the entry behind it.
 A client re-verifies a consistency proof by checking that the proof closes between the two named, signature-verified checkpoints.
+
+Once the trust policy no longer lists the recorder key that signed an entry as valid, the time the entry states is only that key's holder's word.
+A client MUST then treat the entry as undecided unless evidence its signer does not control dates it before the key's end, as the Auditability Protocol's verifier does (`AUDIT_KEY_ENDED_UNDATED`).
+After a rotation, that evidence is the successor epoch's genesis, read by `listEntries` of the successor epoch from sequence `0`, which commits to the predecessor's terminal checkpoint, together with that checkpoint and the entries it holds.
 
 Verification MUST succeed after transport serialization; a JSON round trip MUST NOT alter any digest or signature.
 

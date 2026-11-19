@@ -47,7 +47,8 @@ interface VerifiedParty {
  * The Card's responsible party as the checker is told of it, once the accountability check has
  * verified it and never before: the root of the Card's chain, with the list URL the verdict
  * reported that root's own credential names, when it reported one. That URL is marked as the root's
- * verified word (`utils/verified-root.ts`), and so read on any host, only when the operator pins the
+ * verified word (`utils/verified-root.ts`), and so read on a private host where that host is the
+ * party's own did:web origin, only when the operator pins the
  * party in `trustedRootIssuers` ({@link pinnedRootOf}): a verdict of `verified: true` says the
  * root's proof verified, not that the operator chose the root, and a host that accepts any root
  * lets the presenter be one.

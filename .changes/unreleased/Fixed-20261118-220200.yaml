@@ -1,0 +1,14 @@
+kind: Fixed
+body: |-
+    **A re-delegation that widens its parent's CRISP budget, or drops or
+    changes a constraint the chain walk does not interpret, is refused.** The
+    walk compared only scopes, so an agent holding a budget of 100 USD could
+    re-delegate with a budget of 1,000,000 USD, or none, and whatever enforced
+    the budget of the presented credential enforced that. `validateDelegationChain`
+    and the delegation gate now refuse, as `chain_invalid`, a re-delegation
+    whose budget is not its parent's and is not narrower: in the same unit, a
+    cap no higher, and no window, or a window of the parent's kind at least as
+    long. A member of `constraints` or `constraints.crisp` that SPEC.md §6.3
+    does not define must be replicated as written. Per-scope `constraints` are
+    still reported in `warnings`, as before.
+time: 2026-11-18T22:02:00.000000-06:00

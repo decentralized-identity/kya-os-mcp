@@ -1,0 +1,11 @@
+kind: Fixed
+body: |-
+    **An Entity Card hop is held to its `issuanceDate` as a start.** The
+    hop window read a VC 1.1 `expirationDate` as an end but not an
+    `issuanceDate` as a start, so a hop issued for the end of the year and
+    stating no `validFrom` was accepted at midyear, while the VC-JWT path
+    already refuses a credential before its `issuanceDate`. A hop before
+    its `issuanceDate`, held with the clock tolerance, is now refused as
+    `delegation_not_yet_valid`. Conformance suite 1.13.0 adds
+    `entity-card/hop-issuance-date-future` for it.
+time: 2026-11-19T01:30:00.000000-06:00

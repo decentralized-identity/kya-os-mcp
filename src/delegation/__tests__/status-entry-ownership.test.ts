@@ -13,10 +13,12 @@ import { MemoryDelegationGraphStorage } from '../storage/memory-graph-storage.js
 import {
   ENTRY,
   REGISTRATION_REFUSED,
+  REMOVED_WHILE_REVOKED,
   forgetWarning,
   leftUnchanged,
   operator,
   refusal,
+  rejectionMessage,
   statusListManager,
 } from './helpers/status-entry-operator.js';
 
@@ -124,9 +126,11 @@ describe('a graph that reads the owners the status list manager records', () => 
     await op.graph.removeDelegation('victim');
     await op.graph.removeDelegation('live');
 
-    for (const [id, named] of [['squatter', 'victim'], ['victim', 'victim'], ['live', 'live']] as const) {
+    for (const [id, named] of [['squatter', 'victim'], ['live', 'live']] as const) {
       expect((await refusal(op.carrying(id, 'root', op.entry(named)))).message).toBe(REGISTRATION_REFUSED(id));
     }
+    // The revoked delegation leaves a revoked record, so its own id is refused before its entry is read.
+    expect(await rejectionMessage(op.carrying('victim', 'root', op.entry('victim')))).toBe(REMOVED_WHILE_REVOKED('victim'));
     expect(await op.manager.getStatusEntryOwner(op.entry('victim'))).toEqual({ delegationId: 'victim', retired: true });
     expect(await op.bits()).toEqual({ root: false, victim: true, live: false });
 

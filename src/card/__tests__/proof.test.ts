@@ -65,12 +65,14 @@ describe('verifyCardProof — happy path', () => {
     // The proof carries a cnf but no token cnf was wired to fuse it against, so it degrades to a
     // valid L3-minus proof AND surfaces a NON-FATAL warning (TM-1) so the downgrade is observable.
     // ok / reasons / level are unaffected — the warning does not fail the proof closed.
+    // The proof was made for a request that carries no delegation chain, and states so (SPEC.md §7.8).
     expect(res).toEqual({
       ok: true,
       reasons: [],
       level: 'L3-minus',
       did: DID,
       warnings: ['cnf_present_but_token_unfused'],
+      statedDelegation: { kind: 'none' },
     });
   });
 

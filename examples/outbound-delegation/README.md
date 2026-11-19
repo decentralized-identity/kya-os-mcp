@@ -32,12 +32,13 @@ With outbound delegation propagation:
 | `KYA-OS-Delegation-Credential` | The delegation credential as a VC-JWT, which Server B derives authorization from (§8.1) | `eyJhbGciOiJFZERTQS...` |
 | `KYA-OS-Agent-DID` | The original agent's DID | `did:key:z6Mk...` |
 | `KYA-OS-Delegation-Chain` | The delegation chain ID (vcId of the root delegation); advisory, never read for a decision | `urn:uuid:abc-123` |
-| `KYA-OS-Session-Id` | The current KYA-OS session ID | `kyaos_xyz789` |
+| `KYA-OS-Session-Id` | An anchor of the current KYA-OS session for this target's host, never the session ID, which the session's grants answer to | `sha256:6f1c...` |
 | `KYA-OS-Delegation-Proof` | Signed JWT proving the delegation is being forwarded | `eyJhbGciOiJFZERTQS...` |
 
 `buildOutboundDelegationHeaders()` sends `KYA-OS-Delegation-Credential` when you pass the credential as `credentialJwt`.
 Without it, a service that follows §8.1 can authorize nothing, and the first call in a process that omits it logs a warning.
 The header carries a VC-JWT: the credential the agent presented in that form, a grant's `credentialJwt`, or one the issuer signs as the demo does.
+It throws, and signs nothing, for a delegation record that is not in force: one that is not `active`, is before its `notBefore` or past its `notAfter`, or names an audience that does not admit the forwarding server.
 
 ## The Delegation Proof JWT
 

@@ -38,6 +38,29 @@ describe('a did:web DID decoded once', () => {
     expect(parseDidWeb(did)).toBeNull();
   });
 
+  // The URL parser removes every tab, line feed and carriage return from a URL before it reads
+  // it, so `.<TAB>.` would be read there as a dot-segment and a tab alone as an empty segment.
+  it.each([
+    ['a dot-segment split by a tab', 'did:web:example.com:bob:%2E%09%2E:alice'],
+    ['a dot-segment split by a line feed', 'did:web:example.com:bob:.%0A.:alice'],
+    ['a dot-segment split by a carriage return', 'did:web:example.com:bob:.%0D.:alice'],
+    ['a single dot and a line feed', 'did:web:example.com:bob:.%0A'],
+    ['a tab alone', 'did:web:example.com:bob:%09'],
+    ['another control character', 'did:web:example.com:bob:a%00b'],
+    ['a space', 'did:web:example.com:bob:a%20b'],
+    ['a no-break space', 'did:web:example.com:bob:a%C2%A0b'],
+  ])('names no URL with a path segment that holds %s', (_name, did) => {
+    expect(didWebToUrl(did)).toBeNull();
+    expect(parseDidWeb(did)).toBeNull();
+  });
+
+  it("does not resolve a DID that names bob's path from a document alice serves, through a tab", async () => {
+    const did = 'did:web:example.com:bob:%2E%09%2E:alice';
+    const provider = servingByPath({ '/alice/did.json': { id: did, verificationMethod: [] } });
+    expect(await createDidWebResolver(provider).resolve(did)).toBeNull();
+    expect(provider.fetch).not.toHaveBeenCalled();
+  });
+
   it('still decodes what a DID encodes once: a port, an IP literal, a name and a segment', () => {
     expect(didWebToUrl('did:web:example.com%3A8443:users:alice')).toBe('https://example.com:8443/users/alice/did.json');
     expect(didWebToUrl('did:web:%5B%3A%3A1%5D')).toBe('https://[::1]/.well-known/did.json');

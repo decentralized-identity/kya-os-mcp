@@ -9,7 +9,7 @@
  */
 
 import { CompactSign, importPKCS8 } from 'jose';
-import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { canonicalizeJson } from '../utils/canonical-json.js';
 import {
   RESPONSE_PROOF_PROFILE_BODY,
   RESPONSE_PROOF_PROFILE_ENVELOPE,
@@ -21,8 +21,12 @@ import {
 } from '../types/protocol.js';
 import type { CryptoProvider } from '../providers/base.js';
 import { CryptoService, type Ed25519JWK } from '../utils/crypto-service.js';
-import { alternateRequestShapes, withoutTopLevelMeta } from './covered-request.js';
-import type { ContentBindingMismatch } from './binding.js';
+import {
+  buildProofJwsPayload,
+  computeCanonicalHashes,
+  findContentBindingMismatch,
+  signedProofMeta,
+} from './payload.js';
 import { base64ToBytes, base64urlEncodeFromBytes, bytesToBase64 } from '../utils/base64.js';
 import { ED25519_PKCS8_DER_HEADER, ED25519_KEY_SIZE } from '../utils/ed25519-constants.js';
 
@@ -127,9 +131,27 @@ export interface ProofOptions {
  */
 export const PRECOMPUTED_REQUEST_HASH: unique symbol = Symbol('kya-os.precomputed-request-hash');
 
-/** {@link ProofOptions} with the internal precomputed request hash. */
+/**
+ * The members of a proof's meta the generator sets itself, from its identity, the session, the
+ * request and response, and `profile`: never from an option of the same name.
+ */
+const GENERATOR_SET_MEMBERS = [
+  'did', 'kid', 'ts', 'nonce', 'audience', 'sessionId', 'requestHash', 'responseHash', 'prf',
+] as const satisfies ReadonlyArray<keyof ProofMeta>;
+
+/**
+ * Internal option key: parameters the proof's JWS protected header carries beside `alg` and `kid`,
+ * which they never replace. The header is part of the signing input, so the signature covers them,
+ * and a verifier that does not know one ignores it (RFC 7515 §4). A symbol, as
+ * {@link PRECOMPUTED_REQUEST_HASH} is, and exported from this module only: a request proof states
+ * its delegation this way (`../delegation/stated-delegation.ts`).
+ */
+export const PROTECTED_HEADER_PARAMETERS: unique symbol = Symbol('kya-os.protected-header-parameters');
+
+/** {@link ProofOptions} with the internal precomputed request hash and protected header parameters. */
 export interface InternalProofOptions extends ProofOptions {
   [PRECOMPUTED_REQUEST_HASH]?: string;
+  [PROTECTED_HEADER_PARAMETERS]?: Readonly<Record<string, string>>;
 }
 
 // Re-exported so proof consumers can import the profile vocabulary from the
@@ -137,175 +159,12 @@ export interface InternalProofOptions extends ProofOptions {
 export { RESPONSE_PROOF_PROFILE_BODY, RESPONSE_PROOF_PROFILE_ENVELOPE };
 export type { ResponseProofProfile };
 
-/**
- * Compute the canonical request/response hashes that bind a proof to a specific
- * invocation. This is the SINGLE source of truth for that hashing — used by both
- * the signer (`ProofGenerator`) and the verifier (`ProofVerifier`), so the two
- * cannot drift. `requestHash` = SHA-256 over RFC 8785 `canonicalize({method,params})`.
- *
- * `responseHash` (omitted when there is no response body, e.g. denial /
- * step-up proofs) depends on the response-proof profile:
- * - body (default): SHA-256 over `canonicalize(response.data)` — the response
- *   BODY only (the MCP `content` array by convention).
- * - envelope: `response.data` is the ENTIRE MCP result object; hashing covers it
- *   with the top-level `_meta` member removed (SPEC §7.3), mirroring the
- *   request side's `{method, params minus _meta}` rule. `_meta` stays
- *   intermediary-mutable and is where the proof itself is attached, so
- *   exclusion is what keeps attach-after-sign sound. Non-object `data` is
- *   canonicalized as-is — the function stays total and signer/verifier
- *   symmetric on every input.
- *
- * Note: RFC 8785 (via json-canonicalize) drops object members whose value is
- * `undefined`, so a field set to `undefined` hashes identically to that field
- * being absent. Bind only over values that are actually present; never rely on
- * the presence of an `undefined`-valued key to distinguish two payloads.
- *
- * @param hash - a byte → `sha256:<hex>` function (bind a `CryptoProvider.hash`)
- * @param profile - response-proof profile selecting the response
- *   canonicalization; the verifier derives it from the proof's `prf` claim
- */
-export async function computeCanonicalHashes(
-  request: ToolRequest,
-  response: ToolResponse | undefined,
-  hash: (bytes: Uint8Array) => Promise<string>,
-  profile: ResponseProofProfile = RESPONSE_PROOF_PROFILE_BODY,
-): Promise<{ requestHash: string; responseHash?: string }> {
-  const canonicalRequest = {
-    method: request.method,
-    ...(request.params ? { params: request.params } : {}),
-  };
-  const requestHash = await hash(
-    canonicalizeJsonBytes(canonicalRequest),
-  );
-  if (response === undefined) {
-    return { requestHash };
-  }
-  const responseHash = await hash(
-    canonicalizeJsonBytes(canonicalResponseBody(response.data, profile)),
-  );
-  return { requestHash, responseHash };
-}
-
-/**
- * The profile-selected response material that `responseHash` covers. The body profile hashes
- * `data` verbatim; the envelope profile removes the top-level `_meta` member from an object
- * envelope (and only from an object — arrays and primitives pass through, so
- * the mapping is total and identical for signer and verifier). Every other member stays, one
- * named `__proto__` included ({@link withoutTopLevelMeta}).
- */
-function canonicalResponseBody(
-  data: unknown,
-  profile: ResponseProofProfile,
-): unknown {
-  if (
-    profile !== RESPONSE_PROOF_PROFILE_ENVELOPE ||
-    data === null ||
-    typeof data !== 'object' ||
-    Array.isArray(data)
-  ) {
-    return data;
-  }
-  return withoutTopLevelMeta(data as Record<string, unknown>);
-}
-
-/**
- * Every `requestHash` a verifier accepts for `request`: the hash of `request`
- * as given (the {@link computeCanonicalHashes} rule producers sign with), then
- * the hashes of the same call's other shapes, so that a caller holding either
- * the legacy `{ method: <tool name>, params: <arguments> }` shape or the
- * `tools/call` request as sent can verify a proof minted over either (SPEC
- * §7.3). Each candidate describes the same tool name and business arguments,
- * so none admits a proof over a different call.
- */
-export async function acceptedRequestHashes(
-  request: ToolRequest,
-  hash: (bytes: Uint8Array) => Promise<string>,
-): Promise<string[]> {
-  const hashes = new Set<string>();
-  for (const shape of [request, ...alternateRequestShapes(request)]) {
-    hashes.add((await computeCanonicalHashes(shape, undefined, hash)).requestHash);
-  }
-  return [...hashes];
-}
-
-/**
- * Compare the request (and response) a verifier actually received with the
- * hashes a proof binds; `undefined` means they match. Shared by `ProofVerifier`
- * and `ProofGenerator.verifyProof` so both apply one fail-closed rule.
- *
- * The request matches when `meta.requestHash` is any of
- * {@link acceptedRequestHashes}; the hash of the request as given is tried
- * first, and the other shapes only when it differs.
- *
- * `meta.responseHash` is the ONLY thing that binds the response body —
- * including a needs_authorization challenge's `authorizationUrl` — so it is
- * checked whenever the proof carries one. Gating the comparison on a response
- * being supplied would pass a caller who supplies only the request while a
- * swapped URL went unverified (the `requestHash` is identical for a genuine and
- * a MITM'd challenge). So: a proof that binds a response must be given one, and
- * a proof that binds none must not be. The response profile comes from the
- * proof's own signature-covered `prf` claim, never from configuration.
- */
-export async function findContentBindingMismatch(
-  meta: Pick<ProofMeta, 'requestHash' | 'responseHash' | 'prf'>,
-  expected: { request: ToolRequest; response?: ToolResponse },
-  hash: (bytes: Uint8Array) => Promise<string>,
-): Promise<ContentBindingMismatch | undefined> {
-  const { requestHash, responseHash } = await computeCanonicalHashes(
-    expected.request,
-    expected.response,
-    hash,
-    meta.prf ?? RESPONSE_PROOF_PROFILE_BODY,
-  );
-  if (
-    meta.requestHash !== requestHash &&
-    !(await acceptedRequestHashes(expected.request, hash)).includes(meta.requestHash)
-  ) {
-    return 'request';
-  }
-  const bindsResponse = meta.responseHash !== undefined;
-  if (bindsResponse !== (expected.response !== undefined)) {
-    return bindsResponse ? 'response-missing' : 'response-unexpected';
-  }
-  if (bindsResponse && meta.responseHash !== responseHash) return 'response';
-  return undefined;
-}
-
-/**
- * Build the exact JWS payload object a proof signs over, from its `ProofMeta`.
- * SINGLE source of truth for the payload SHAPE — the signer
- * (`ProofGenerator.generateJWS`) serializes it and the verifier
- * (`ProofVerifier.buildCanonicalPayload`) reconstructs it from received meta,
- * so a claim added in one place can never silently go uncovered in the other.
- * Serialization is always RFC 8785 (`canonicalizeJson`), never `JSON.stringify`.
- */
-export function buildProofJwsPayload(meta: ProofMeta): Record<string, unknown> {
-  return {
-    // Standard JWT claims (RFC 7519)
-    aud: meta.audience,
-    sub: meta.did,
-    iss: meta.did,
-
-    // KYA-OS proof claims
-    requestHash: meta.requestHash,
-    // responseHash is absent on denial / step-up proofs (no response).
-    ...(meta.responseHash !== undefined && { responseHash: meta.responseHash }),
-    ts: meta.ts,
-    nonce: meta.nonce,
-    sessionId: meta.sessionId,
-
-    // Optional claims (only include if present)
-    ...(meta.scopeId && { scopeId: meta.scopeId }),
-    ...(meta.delegationRef && { delegationRef: meta.delegationRef }),
-    ...(meta.delegationChainDigest && { delegationChainDigest: meta.delegationChainDigest }),
-    ...(meta.clientDid && { clientDid: meta.clientDid }),
-    ...(meta.outcome && { outcome: meta.outcome }),
-    ...(meta.reason && { reason: meta.reason }),
-    // Profile discriminator (envelope-profile proofs only) — covered by the signature so it
-    // cannot be stripped to downgrade the proof to body-only semantics.
-    ...(meta.prf && { prf: meta.prf }),
-  };
-}
+export {
+  acceptedRequestHashes,
+  buildProofJwsPayload,
+  computeCanonicalHashes,
+  findContentBindingMismatch,
+} from './payload.js';
 
 export class ProofGenerator {
   private identity: ProofAgentIdentity;
@@ -339,21 +198,28 @@ export class ProofGenerator {
     // the spread below can never leak a `profile` key into the signed meta. The
     // claim form is `prf`, set only for the envelope profile (the body profile stays byte-identical on the wire).
     const { profile = RESPONSE_PROOF_PROFILE_BODY, ...metaOptions } = options;
-    // The `prf` claim derives ONLY from `profile`. TypeScript keeps `prf` out
-    // of ProofOptions, but a plain-JS caller could still pass one — strip it so
-    // a foreign profile value can never ride the spread into the signed payload.
-    Reflect.deleteProperty(metaOptions, 'prf');
+    // The members the generator sets, `prf` among them, which derives ONLY from
+    // `profile`, always win. TypeScript keeps them out of ProofOptions, but a
+    // plain-JS caller could still pass one: strip each, so no value of the
+    // caller's can ride the spread into the signed payload in its place, and no
+    // `responseHash` binds a response the generator was not given.
+    for (const member of GENERATOR_SET_MEMBERS) Reflect.deleteProperty(metaOptions, member);
     // A request hash computed earlier, when the caller no longer holds the
     // request; never copied into the meta.
     const precomputed = (options as InternalProofOptions)[PRECOMPUTED_REQUEST_HASH];
     Reflect.deleteProperty(metaOptions, PRECOMPUTED_REQUEST_HASH);
+    // Parameters for the protected header, which is signed; never copied into the meta either.
+    const headerParameters = (options as InternalProofOptions)[PROTECTED_HEADER_PARAMETERS];
+    Reflect.deleteProperty(metaOptions, PROTECTED_HEADER_PARAMETERS);
     const hashes = await this.generateCanonicalHashes(request, response, profile);
     if (precomputed !== undefined) hashes.requestHash = precomputed;
     const proofNonce = base64urlEncodeFromBytes(
       await this.cryptoProvider.randomBytes(16),
     );
 
-    const meta: ProofMeta = {
+    // Only what the signature covers goes into the meta (`signedProofMeta`): an option the
+    // schema does not name, or an optional claim given as "", never reaches it.
+    const meta: ProofMeta = signedProofMeta({
       did: this.identity.did,
       kid: this.identity.kid,
       ts: Math.floor(Date.now() / 1000),
@@ -368,9 +234,9 @@ export class ProofGenerator {
         ? { prf: RESPONSE_PROOF_PROFILE_ENVELOPE }
         : {}),
       ...metaOptions,
-    };
+    });
 
-    const jws = await this.generateJWS(meta);
+    const jws = await this.generateJWS(meta, headerParameters);
 
     return { jws, meta };
   }
@@ -410,7 +276,7 @@ export class ProofGenerator {
       : key;
   }
 
-  private async generateJWS(meta: ProofMeta): Promise<string> {
+  private async generateJWS(meta: ProofMeta, headerParameters: Readonly<Record<string, string>> = {}): Promise<string> {
     try {
       // jose's CompactSign owns the JWS signing-input construction, so
       // canonicalization stays inside the library and the signing input is the
@@ -426,11 +292,10 @@ export class ProofGenerator {
       const canonicalPayload = canonicalizeJson(payload);
       const payloadBytes = new TextEncoder().encode(canonicalPayload);
 
+      // `alg` and `kid` come first and are the generator's own, whatever else the header is given.
+      const own = { alg: 'EdDSA', kid: this.identity.kid };
       const jws = await new CompactSign(payloadBytes)
-        .setProtectedHeader({
-          alg: 'EdDSA',
-          kid: this.identity.kid,
-        })
+        .setProtectedHeader({ ...own, ...headerParameters, ...own })
         .sign(privateKey);
 
       return jws;
@@ -464,9 +329,10 @@ export class ProofGenerator {
 
   /**
    * Check that a proof was signed by this generator's identity over `request`
-   * and, when the proof binds one, `response`. Every `meta` member is checked
-   * through the signature: the JWS is verified against the payload rebuilt from
-   * `meta`, and a payload it embeds must be that one. A proof that binds a
+   * and, when the proof binds one, `response`. Every `meta` member it reads is
+   * checked through the signature: it reads only the meta the signature covers
+   * (`signedProofMeta`), the JWS is verified against the payload rebuilt from
+   * that, and a payload it embeds must be that one. A proof that binds a
    * response fails without one, and a proof that binds none fails with one.
    * `request` may be given in either shape (see {@link acceptedRequestHashes}).
    *
@@ -480,7 +346,7 @@ export class ProofGenerator {
   ): Promise<boolean> {
     try {
       if (!validateDetachedProof(proof).success) return false;
-      const { meta } = proof;
+      const meta = signedProofMeta(proof.meta);
       // iss/sub cover meta.did; the protected header's kid is pinned below.
       if (meta.did !== this.identity.did || meta.kid !== this.identity.kid) {
         return false;

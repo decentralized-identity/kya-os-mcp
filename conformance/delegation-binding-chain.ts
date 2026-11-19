@@ -6,7 +6,9 @@
  * The proofs here bind that chain, allowed or refused, or bind nothing, or
  * name a credential other than the leaf. They are held against the chain,
  * against another copy of it, and against chains a digest must tell apart
- * from it. One more names a credential whose id is too long to record.
+ * from it, another delegation of the same sub-agent among them. A refusal of
+ * a leaf whose own signature fails binds that leaf alone. One more names a
+ * credential whose id is too long to record.
  */
 
 import type { DetachedProof } from '../src/index.js';
@@ -34,8 +36,9 @@ export async function chainVectors<P extends { did: string }>(kit: BindingKit<P>
   // The leaf is minted until its JWS signature has a character base64 writes
   // another way (`-` or `_`), which the no-signed-form vector below needs.
   let chainLeafJwt: string;
+  let subAgent: P;
   do {
-    const subAgent = await mint.party();
+    subAgent = await mint.party();
     const leafCredential = await mint.credential({
       issuer: worker,
       subjectDid: subAgent.did,
@@ -126,6 +129,32 @@ export async function chainVectors<P extends { did: string }>(kit: BindingKit<P>
     throw new Error('expected an id long enough to be referred to by its digest');
   }
   const longIdProof = await kit.boundAlone(longIdCredential);
+
+  // Another delegation of the same sub-agent, from another party: a proof
+  // that names the bound chain is held to it and to nothing put beside it.
+  const otherParty = await mint.party();
+  const otherDelegation = [await mint.credential({
+    issuer: otherParty,
+    subjectDid: subAgent.did,
+    id: 'del-other-party-subagent',
+    scopes: ['records:read'],
+  })];
+
+  // A leaf credential object whose signature fails under ancestors that
+  // verify. The server refuses it on its own, before it examines an
+  // ancestor, so the refusal's digest covers the leaf alone (SPEC §7.8).
+  const signedLeaf = await mint.credential({
+    issuer: worker,
+    subjectDid: subAgent.did,
+    id: 'del-worker-subagent-object',
+    parentId: 'del-orchestrator-worker',
+    scopes: ['records:read'],
+  });
+  const brokenLeaf = { ...signedLeaf, proof: { ...signedLeaf.proof, proofValue: withOtherCharacter(String(signedLeaf.proof?.proofValue)) } };
+  const leafAloneProof = await kit.refused('Delegation credential signature verification failed', {
+    delegationRef: await kit.reference(brokenLeaf),
+    delegationChainDigest: await kit.chainDigest([brokenLeaf]),
+  });
 
   return [
     {
@@ -227,6 +256,26 @@ export async function chainVectors<P extends { did: string }>(kit: BindingKit<P>
         'An id too long to record is referred to by sha256 of its UTF-8 bytes, and a verifier derives the same reference from the credential',
       input: kit.inputOf(longIdProof, { request, response, delegationChain: [longIdCredential] }),
     },
+    {
+      id: 'signed-proof/delegation-chain-other-delegation',
+      category: 'signed-proof',
+      description:
+        'Chain-binding proof that names the bound chain, held against another delegation of the same sub-agent, which another party issued',
+      expected: 'fail',
+      reason:
+        'A proof names the delegation the call was made under by delegationRef and delegationChainDigest, so it is refused beside any other delegation of its subject: a party on the path that holds another cannot swap it in',
+      input: kit.inputOf(chainBoundProof, { request, response, delegationChain: otherDelegation }),
+    },
+    {
+      id: 'signed-proof/delegation-chain-refused-leaf-alone',
+      category: 'signed-proof',
+      description:
+        'Denial proof for a presented credential object whose signature fails under two ancestors that verify, held against that credential alone as a refusal',
+      expected: 'pass',
+      reason:
+        'A server examines the presented credential before any ancestor, so a refusal of one that does not verify binds the presented credential alone, not the chain it was presented under',
+      input: kit.inputOf(leafAloneProof, { request, delegationChain: [brokenLeaf], outcome: 'denied' }),
+    },
   ];
 }
 
@@ -236,6 +285,13 @@ function jwsSignature(jws: string): string {
 }
 
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+/** Another signature of the same length: its eleventh base64url character replaced by another. */
+function withOtherCharacter(encoded: string): string {
+  const at = 10;
+  const next = BASE64URL_ALPHABET.charAt((BASE64URL_ALPHABET.indexOf(encoded.charAt(at)) + 1) % 64);
+  return `${encoded.slice(0, at)}${next}${encoded.slice(at + 1)}`;
+}
 
 /**
  * The same signature as another string. A 64-byte Ed25519 signature is 86

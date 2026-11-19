@@ -24,6 +24,8 @@ _OPTIONAL_DIGESTS = ("responseHash", "delegationChainDigest")
 _OPTIONAL_STRINGS = ("scopeId", "delegationRef", "clientDid", "reason")
 # Signed only when not empty, in this order after the claims every proof signs (7.4).
 _OPTIONAL_CLAIMS = ("scopeId", "delegationRef", "delegationChainDigest", "clientDid", "outcome", "reason", "prf")
+# The members of `meta` its signature covers whatever they hold: `kid` in the protected header.
+_ALWAYS_SIGNED = _REQUIRED_STRINGS + ("ts", "requestHash", "responseHash")
 
 
 def _is_number(value) -> bool:
@@ -78,6 +80,17 @@ def signed_payload(meta: dict) -> bytes:
     payload.update(ts=meta["ts"], nonce=meta["nonce"], sessionId=meta["sessionId"])
     payload.update((name, meta[name]) for name in _OPTIONAL_CLAIMS if meta.get(name))
     return jcs(payload)
+
+
+def signed_meta(meta: dict) -> dict:
+    """The members of `meta` its signature covers, in the order `meta` gives them (7.4).
+
+    Those every proof signs, `responseHash` where it is given, and each optional claim that is
+    not empty. A verifier acts on these alone: a member the proof schema does not name, or an
+    optional claim given as an empty string, says nothing.
+    """
+    return {name: value for name, value in meta.items()
+            if name in _ALWAYS_SIGNED or (name in _OPTIONAL_CLAIMS and value)}
 
 
 def jws_segment_json(segment: str):
@@ -150,6 +163,12 @@ def proof_verifies(vector) -> bool:
         return _signature_holds(proof, vector.get("publicKeyJwk"))
     except ValueError:
         return False
+
+
+def verified_meta(vector) -> "dict | None":
+    """The meta of the vector's proof as its signature covers it (`signed_meta`), where the proof
+    verifies (`proof_verifies`); None where it does not."""
+    return signed_meta(vector["proof"]["meta"]) if proof_verifies(vector) else None
 
 
 def _js_truthy(value) -> bool:

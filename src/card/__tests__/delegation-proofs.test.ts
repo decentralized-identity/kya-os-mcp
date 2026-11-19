@@ -11,6 +11,7 @@ import { createStatusListProofVerifier } from '../status-list-proof.js';
 import {
   RESOURCE, STATUS_URL, hop, identity, now, parties, serve, signEddsaJcs2022, statusList, twoHopChain,
 } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const didResolver = createDidKeyResolver();
 
@@ -115,7 +116,8 @@ describe('evaluateDelegationChain proofs before status', () => {
     const result = evaluateDelegationChain(chain, check, {
       ...ctx, resourceOwner: pinned ? p.acme.did : undefined, verifyHopProof: verify,
     });
-    expect(events).toEqual(['proof 0']);
+    // The parent commitments are checked first (./parent-credential-digest.test.ts), then the root's proof starts.
+    await vi.waitFor(() => expect(events).toEqual(['proof 0']));
     finishRoot();
     await vi.waitFor(() => expect(events).toEqual(['proof 0', 'proved 0', 'proof 1', 'proved 1', 'status 3']));
     finishStatus();
@@ -154,10 +156,12 @@ describe('evaluateDelegationChain proofs before status', () => {
 
   it('verifies the received credential with all its signed extension members', async () => {
     const { p, chain, check, ctx } = fixture();
-    const unsigned = Object.fromEntries(Object.entries(chain[0]).filter(([key]) => key !== 'proof'));
-    chain[0] = signEddsaJcs2022({
-      ...unsigned, extension: { binding: 'signed' }, credentialStatus: { ...chain[0].credentialStatus, extension: 'signed' },
-    }, p.acme) as DelegationCredential;
+    const unsigned: Record<string, unknown> = {
+      ...Object.fromEntries(Object.entries(chain[0]).filter(([key]) => key !== 'proof')),
+      extension: { binding: 'signed' },
+      credentialStatus: { ...chain[0].credentialStatus, extension: 'signed' },
+    };
+    chain[0] = signEddsaJcs2022(unsigned, p.acme) as DelegationCredential;
     const verify = vi.fn(createDelegationProofVerifier({ didResolver }));
     expect(await evaluateDelegationChain(chain, check, { ...ctx, verifyHopProof: verify })).toMatchObject({ ok: true });
     expect(verify.mock.calls[0]?.[0]).toBe(chain[0]);
@@ -181,7 +185,7 @@ describe('evaluateDelegationChain proofs before status', () => {
 
   it.each([
     ['coded', () => { throw new RefusalError('host_refused', 'issuer host refused'); }, 'host_refused', 'issuer host refused'],
-    ['unexpected', () => { throw new Error('private transport detail'); }, 'runtime_error', 'proof did not verify'],
+    ['unexpected', () => { throw new Error('private transport detail'); }, 'runtime_error', `proof did not verify${WITHHELD_SUFFIX}`],
     ['false', () => false, 'invalid_proof', 'proof did not verify'],
     ['DID outage', createDelegationProofVerifier({ didResolver: { resolve: async () => null } }), 'did_unavailable', undefined],
   ] as const)('keeps %s refusal codes in parity with verifyRequestDelegation', async (_name, verify, code, reason) => {

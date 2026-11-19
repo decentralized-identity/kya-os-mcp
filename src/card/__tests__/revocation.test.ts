@@ -10,10 +10,16 @@ import type { SafeFetch } from '../../utils/safe-fetch.js';
 import type { BitstringStatusListEntry } from '../schema.js';
 import { webStreamsGunzip } from '../../__tests__/utils/web-streams-gzip.js';
 import { ANY_CODE, BIT_SET, codedAs } from '../../__tests__/utils/refusal-coding.js';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 const STATUS_URL = 'https://issuer.example/status/1';
+/** What the checker tells whoever presented an entry of a list it read but may not read. */
+const UNREAD = `the status list at "${STATUS_URL}" could not be read or checked`;
+/** The reason a refusal gives where the list's words went to the operator's log. */
+const UNREAD_REASON = `${UNREAD}${WITHHELD_SUFFIX}`;
 const BYTE_LEN = 32; // 256 bits — ample headroom for the test indices
 
 /** Multibase / GZIP `encodedList` over a bitstring with the given indices set. */
@@ -85,24 +91,23 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     expect(await check(entryAt(7))).toEqual({ revoked: true, fresh: true, ...BIT_SET });
   });
 
-  it('FAIL-CLOSED on a list past its validUntil, saying when it expired, whatever its bit', async () => {
-    const reason = 'status list expired at "2020-01-01T00:00:00Z" (its validUntil)';
+  // No proof vouches for a list read without verifyStatusList, so its dates are its host's words: the log's alone.
+  it('FAIL-CLOSED on a list past its validUntil, logging when it expired, whatever its bit', async () => {
     for (const revoked of [[5], []]) {
       const cred = statusCredential(revoked, { validUntil: '2020-01-01T00:00:00Z' });
       const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-      expect(await check(entryAt(5))).toStrictEqual({ revoked: true, fresh: false, reason, ...codedAs('status_unavailable') });
+      const { result, logged } = await withWarnings(() => check(entryAt(5)));
+      expect(result).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_unavailable') });
+      expect(logged).toContain('status list expired at "2020-01-01T00:00:00Z" (its validUntil)');
     }
   });
 
-  it('FAIL-CLOSED on a list before its validFrom, saying when it becomes valid', async () => {
+  it('FAIL-CLOSED on a list before its validFrom, logging when it becomes valid', async () => {
     const cred = statusCredential([], { validFrom: '2099-01-01T00:00:00Z' });
     const check = createRevocationChecker({ fetch: jsonFetch(cred), now: NOW });
-    expect(await check(entryAt(5))).toStrictEqual({
-      revoked: true,
-      fresh: false,
-      reason: 'status list is not valid until "2099-01-01T00:00:00Z" (its validFrom)',
-      ...codedAs('status_unavailable'),
-    });
+    const { result, logged } = await withWarnings(() => check(entryAt(5)));
+    expect(result).toStrictEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_unavailable') });
+    expect(logged).toContain('status list is not valid until "2099-01-01T00:00:00Z" (its validFrom)');
   });
 
   it('reads a list inside its window as fresh', async () => {
@@ -143,14 +148,11 @@ describe('createRevocationChecker (W3C Bitstring Status List v1.0)', () => {
     expect(await check(entryAt(5))).toEqual({ revoked: true, fresh: false, reason: expect.any(String), ...ANY_CODE });
   });
 
-  it('refuses a list with no credentialSubject by its purpose, before reading its bits', async () => {
+  it('refuses a list with no credentialSubject by its purpose, before reading its bits, logging why', async () => {
     const check = createRevocationChecker({ fetch: jsonFetch({ id: STATUS_URL }), now: NOW });
-    expect(await check(entryAt(5))).toEqual({
-      revoked: true,
-      fresh: false,
-      reason: `status list has no statusPurpose (the entry's is "${STATUS_PURPOSE_REVOCATION}")`,
-      ...codedAs('status_signer_untrusted'),
-    });
+    const { result, logged } = await withWarnings(() => check(entryAt(5)));
+    expect(result).toEqual({ revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_signer_untrusted') });
+    expect(logged).toContain(`status list has no statusPurpose (the entry's is "${STATUS_PURPOSE_REVOCATION}")`);
   });
 
   it('FAIL-CLOSED on a statusListIndex out of range for the bitstring', async () => {
@@ -193,11 +195,14 @@ describe('createRevocationChecker (validity window)', () => {
     ['a non-string validUntil', { validUntil: 1_900_000_000 }, 'a validUntil (of type number)'],
     ['a null validUntil', { validUntil: null }, 'a validUntil (of type null)'],
     ['an unparseable legacy expirationDate', { expirationDate: 'never' }, 'an expirationDate ("never")'],
-  ])('%s is a list of unknown validity, refused FAIL-CLOSED whatever its bit', async (_label, dates, stated) => {
+  ])('%s is a list of unknown validity, refused FAIL-CLOSED whatever its bit, logging why', async (_label, dates, stated) => {
     const check = createRevocationChecker({ fetch: jsonFetch({ ...statusCredential([5]), ...dates }), now: NOW });
-    const refused = { revoked: true, fresh: false, reason: `status list states ${stated} that is not an RFC 3339 date-time with a time zone`, ...codedAs('status_unavailable') };
-    expect(await check(entryAt(5))).toStrictEqual(refused);
-    expect(await check(entryAt(6))).toStrictEqual(refused);
+    const refused = { revoked: true, fresh: false, reason: UNREAD_REASON, ...codedAs('status_unavailable') };
+    for (const index of [5, 6]) {
+      const { result, logged } = await withWarnings(() => check(entryAt(index)));
+      expect(result).toStrictEqual(refused);
+      expect(logged).toContain(`status list states ${stated} that is not an RFC 3339 date-time with a time zone`);
+    }
   });
 
   it('a list that states no bound is read as fresh, as before', async () => {

@@ -15,6 +15,7 @@ import type {
   Proof,
 } from '../types/protocol.js';
 import { wrapDelegationAsVC } from '../types/protocol.js';
+import { parentCredentialDigestOf } from './parent-commitment.js';
 import { canonicalizeJSON } from './utils.js';
 
 export interface IssueDelegationOptions {
@@ -23,6 +24,27 @@ export interface IssueDelegationOptions {
   expirationDate?: string;
   credentialStatus?: CredentialStatus;
   additionalContexts?: string[];
+  /**
+   * The parent credential a re-delegation is issued under, as the chain will hold it: the object,
+   * with its proof. The credential then states that parent's SPEC §7.8 digest as
+   * `parentCredentialDigest` (SPEC §6.2), which commits it to that one credential: a verifier
+   * refuses it under a parent issued again under the same id. It throws a `TypeError` for a parent
+   * the delegation does not name as its `parentId`, or one that was not delegated to its issuer,
+   * since every verifier would refuse the chain.
+   */
+  parent?: DelegationCredential;
+}
+
+/** `delegation` stating the digest of `parent`, the credential it is issued under. */
+async function committedTo(delegation: DelegationRecord, parent: DelegationCredential): Promise<DelegationRecord> {
+  const named = parent.credentialSubject?.delegation;
+  if (named === undefined || delegation.parentId === undefined || named.id !== delegation.parentId) {
+    throw new TypeError('The parent given is not the delegation named as parentId, so its digest is not stated');
+  }
+  if (named.subjectDid !== delegation.issuerDid) {
+    throw new TypeError('The parent given was not delegated to this issuer, so its digest is not stated');
+  }
+  return { ...delegation, parentCredentialDigest: await parentCredentialDigestOf(parent) };
 }
 
 export interface VCSigningFunction {
@@ -45,6 +67,7 @@ export class DelegationCredentialIssuer {
     delegation: DelegationRecord,
     options: IssueDelegationOptions = {}
   ): Promise<DelegationCredential> {
+    if (options.parent !== undefined) delegation = await committedTo(delegation, options.parent);
     let unsignedVC = wrapDelegationAsVC(delegation, {
       id: options.id,
       issuanceDate: options.issuanceDate,
@@ -81,7 +104,7 @@ export class DelegationCredentialIssuer {
    * in a signed W3C Verifiable Credential.
    *
    * @param params - Delegation parameters including issuer/subject DIDs, constraints, etc.
-   * @param options - Optional VC issuance options (id, dates, status, contexts)
+   * @param options - Optional VC issuance options (id, dates, status, contexts, the parent to commit to)
    * @returns Signed W3C Delegation Credential
    */
   async createAndIssueDelegation(

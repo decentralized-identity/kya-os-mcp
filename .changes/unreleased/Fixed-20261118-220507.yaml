@@ -1,0 +1,8 @@
+kind: Fixed
+body: |-
+    **`requireProof` refuses a `minLevel` it does not know where the guard
+    is built.** A level written another way, such as `l3`, `L3 ` or `L4`,
+    or a value that is not a string, ranked as no floor at all, so the
+    guard passed an `L3-minus` proof under it. It now throws a `TypeError`
+    naming the option and the two levels it takes, `L3-minus` and `L3`.
+time: 2026-11-18T22:05:07.000000-06:00

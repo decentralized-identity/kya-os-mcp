@@ -220,6 +220,9 @@ export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch })
   const delegationGuard = requireDelegation({
     resource: MERCHANT_DID,
     trustedRootIssuers: opts.trustedCustomers,
+    // Every caller here signs with buildCardProof, which states its delegation, so a proof that names
+    // none beside a chain is refused. A merchant with callers on an earlier release leaves this out.
+    requestBinding: 'require',
     verifyHopProof: createDelegationProofVerifier({ didResolver }),
     checkRevocation: createRevocationChecker({
       fetch: opts.fetch,
@@ -241,7 +244,8 @@ export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch })
   return async function placeOrder(request: OrderCall, meta: Record<string, unknown>): Promise<MerchantAnswer> {
     const proof = await proofGuard(request, meta);
     if (!proof.ok) return { status: proof.status, code: proof.error.code, reason: proof.error.reasons[0] };
-    const authority = await delegationGuard({ meta, proofDid: proof.did, action: request.params.name });
+    // The guard holds the chain to the delegation the verified proof states.
+    const authority = await delegationGuard({ meta, proofDid: proof.did, statedDelegation: proof.statedDelegation, action: request.params.name });
     if (!authority.ok) return { status: authority.status, code: authority.error.code, reason: authority.error.reasons[0] };
     // The order costs what the merchant's own price list says, never what the caller says it costs.
     const order = priceOf(request.params.arguments);
@@ -262,9 +266,19 @@ export function merchant(opts: { trustedCustomers: string[]; fetch: SafeFetch })
   };
 }
 
-/** A caller's request proof for `request`, bound to the merchant and a fresh nonce. */
-async function proveCall(caller: Party, request: OrderCall = PLACE_ORDER): Promise<Record<string, unknown>> {
-  return buildCardProof(request, caller.signer, { audience: MERCHANT_DID, nonce: randomBytes(16).toString('base64url') });
+/**
+ * The `_meta` of a caller's call: its request proof for `request`, bound to the merchant and a fresh
+ * nonce, and the chain it carries, when it carries one. The proof then names that chain's last
+ * credential, so the merchant refuses it beside any other chain, and with no chain it states that
+ * the call carries none.
+ */
+async function proveCall(caller: Party, request: OrderCall = PLACE_ORDER, carried?: DelegationChain): Promise<Record<string, unknown>> {
+  const proof = await buildCardProof(request, caller.signer, {
+    audience: MERCHANT_DID,
+    nonce: randomBytes(16).toString('base64url'),
+    ...(carried ? { delegation: carried[carried.length - 1] } : {}),
+  });
+  return carried ? { ...proof, ...toDelegationChainMeta(carried) } : proof;
 }
 
 // ── The seven calls ──────────────────────────────────────────────────────────
@@ -288,7 +302,8 @@ export async function demoScenario(): Promise<DemoResult> {
   const other = await party('another agent');
 
   // Acme delegates to its agent. The agent re-delegates on its own: it signs the leaf with its
-  // key and asks no one, because the root already names it as the delegate.
+  // key and asks no one, because the root already names it as the delegate. Handed the root, the
+  // SDK commits the leaf to it by its digest, so the leaf holds under that one credential.
   const root = await signDelegationCredential(
     unsignedHop({
       issuer: acme,
@@ -312,6 +327,7 @@ export async function demoScenario(): Promise<DemoResult> {
       statusIndex: LEAF_STATUS_INDEX,
     }),
     agent.signer,
+    { parent: root },
   );
   const chain: [DelegationCredential, DelegationCredential] = [root, leaf];
 
@@ -322,33 +338,27 @@ export async function demoScenario(): Promise<DemoResult> {
   const byReference = await placeOrder(PLACE_ORDER, await proveCall(worker));
 
   // 2. By value: the chain travels in the same _meta as the proof.
-  const carried = await placeOrder(PLACE_ORDER, { ...(await proveCall(worker)), ...toDelegationChainMeta(chain) });
+  const carried = await placeOrder(PLACE_ORDER, await proveCall(worker, PLACE_ORDER, chain));
 
   // 3. The worker orders 240 USD: inside Acme's 500, over the 100 its own hop allows.
-  const overLimit = await placeOrder(PLACE_LARGE_ORDER, {
-    ...(await proveCall(worker, PLACE_LARGE_ORDER)),
-    ...toDelegationChainMeta(chain),
-  });
+  const overLimit = await placeOrder(PLACE_LARGE_ORDER, await proveCall(worker, PLACE_LARGE_ORDER, chain));
 
   // 4. The worker orders 1,000 items and says they cost 60 USD; the price list says 30,000.
-  const understated = await placeOrder(PLACE_UNDERSTATED_ORDER, {
-    ...(await proveCall(worker, PLACE_UNDERSTATED_ORDER)),
-    ...toDelegationChainMeta(chain),
-  });
+  const understated = await placeOrder(PLACE_UNDERSTATED_ORDER, await proveCall(worker, PLACE_UNDERSTATED_ORDER, chain));
 
   // 5. The worker edits its own hop: 100 becomes 400, still inside Acme's 500.
   const raised = {
     ...leaf,
     credentialSubject: { ...leaf.credentialSubject, caveats: [{ type: 'MaxAmount', limit: '400.00', currency: 'USD' }] },
   };
-  const tampered = await placeOrder(PLACE_ORDER, { ...(await proveCall(worker)), ...toDelegationChainMeta([root, raised]) });
+  const tampered = await placeOrder(PLACE_ORDER, await proveCall(worker, PLACE_ORDER, [root, raised]));
 
   // 6. Another agent presents the worker's chain with a valid proof of its own.
-  const replayedByAnother = await placeOrder(PLACE_ORDER, { ...(await proveCall(other)), ...toDelegationChainMeta(chain) });
+  const replayedByAnother = await placeOrder(PLACE_ORDER, await proveCall(other, PLACE_ORDER, chain));
 
   // 7. Acme revokes the root. The worker sends exactly the chain that was accepted in step 2.
   published = await acmeStatusList(acme, [ROOT_STATUS_INDEX]);
-  const revoked = await placeOrder(PLACE_ORDER, { ...(await proveCall(worker)), ...toDelegationChainMeta(chain) });
+  const revoked = await placeOrder(PLACE_ORDER, await proveCall(worker, PLACE_ORDER, chain));
 
   return { parties: { acme, agent, worker, other }, chain, byReference, carried, overLimit, understated, tampered, replayedByAnother, revoked };
 }

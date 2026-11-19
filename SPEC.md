@@ -396,6 +396,8 @@ The provider reads those hosts through its own `fetch`, neither resolved nor pin
 The scheme rule, the checked redirects, the byte caps and the deadlines still hold for them.
 Each request of a read is decided on the URL it asks for, as `SafeFetch` decides its `allowOrigins`: a request for a URL the operator names is read wherever its host is, and a redirect from it to any URL the operator does not name, an open redirect on the operator's own host included, is held to the rule, resolved, checked and pinned.
 The reference implementation's status-list checker, `createRevocationChecker`, reads through `SafeFetch` instead, and reads as the operator's own, on any host and still pinned to the addresses it looked up, the lists at the URLs and origins its `statusListIssuers` binds and the list a pinned root's own credential names (§6.6, rule 3), the latter over https alone, since the root's credential names it and the operator does not, and only once that credential's proof has verified: once `evaluateDelegationChain` has verified every hop proof with `verifyHopProof`, `verifyRequestDelegation` or `requireDelegation` has verified them, or `verifyCard`'s accountability check has verified the Card's responsible party as that root.
+It reads the root's list so only at the root's own host: the https origin, host and port, its did:web DID names, written as an origin binding is (§6.6).
+A root's word reaches no further than its own host, so its list on any other private host, and every list of a root with no host of its own, such as a did:key root, is read as any URL a presenter names unless `statusListIssuers` binds it.
 A pinned root is one the operator names, as the `resourceOwner` or in `trustedRootIssuers`, on every path: `verifyCard` takes its own `trustedRootIssuers`, since an accountability verifier that accepts any root, as `verifyRequestDelegation` does under `allowAnyRootIssuer`, lets the presenter be the root and choose the URL, and a root no pin names has its list read as any URL a presenter names.
 Until then the presenter of the chain wrote that URL, so a credential that names the pinned root as its issuer, but whose proof did not verify or was not checked, has its list read as any URL a presenter names is.
 It decides each request on its own URL, as `SafeFetch` decides its `allowOrigins`, so a redirect from one of those URLs to any URL that is not one of them is held as a URL a presenter named.
@@ -565,6 +567,7 @@ interface DelegationRecord {
   controller?: string;           // DID that can revoke this delegation
   vcId: string;                  // URN of the Verifiable Credential
   parentId?: string;             // Parent delegation ID (for chains)
+  parentCredentialDigest?: string; // §7.8 digest of the parent credential (optional, §6.2)
   constraints: DelegationConstraints;
   signature: string;             // Extracted from VC proof
   status: 'active' | 'revoked' | 'expired';
@@ -668,6 +671,26 @@ A verifier MUST reject one that the [URL] parser does not parse as it is written
 The set is fixed as Unicode 16.0 and 17.0 assign it, and `conformance/unseen-code-points.json` lists it, so that verifiers built on different Unicode versions give one verdict.
 The parser removes some of these before it parses and accepts the others, most of which render as nothing or reorder the text around them, so an issuer holding one could be taken for another DID.
 
+**The subject.** The `id` of a credential's `credentialSubject` MUST be a URL by the same rule, and a verifier MUST reject a credential whose subject `id` is not one.
+A party that re-delegates writes the subject of the credential it signs, and a verifier hands that `id` on as the acting agent's DID: into its log, its audit trail and the context of the call it authorizes.
+A line break there would end a log line and start one the party wrote, and a format character could show the `id` as another agent's DID.
+
+**The start.** A credential's `issuanceDate` is "the date and time the credential becomes valid" ([VC-DATA-MODEL] 1.1 §4.6), in either form, VC-JWT or object, and MUST be a date as §6.6 defines one.
+A verifier MUST reject a credential whose `issuanceDate` is ahead of its clock, or cannot be read as such a date, since it names no start, as `delegation_not_yet_valid`.
+It MAY hold the start with the clock tolerance §6.6 permits for a status list, of no more than 600 seconds, since an issuer stamps it with the moment it signs; the reference implementation holds it with 120 seconds.
+
+**The parent commitment.** A re-delegation names its parent by `parentId` (§6.4), and an id is a name the parent's issuer chose.
+A parent issued again under the id of another would therefore carry every re-delegation signed under the first.
+A re-delegation MAY state, in its `delegation` object beside `parentId`, `parentCredentialDigest`: the digest §7.8 gives its parent credential, `SHA-256(UTF8("org.kya-os.delegation.credential.v1") || 0x00 || JCS(signed form))`, written as `sha256:` and 64 lowercase hex digits.
+It is the commitment §6.10 defines for a hop of that profile, stated in this profile's credential.
+The digest is of the parent in the form the chain carries it, a credential object with its `proof` or a VC-JWT; the two forms of one delegation have different signed forms (§7.8), so an issuer states the digest of the form its verifiers resolve.
+A verifier MUST check the digest of every credential that states one against its parent, as the chain resolves it, and MUST refuse the chain, as `chain_invalid`, when the two differ, when that parent has no signed form, or when a credential with no `parentId` states one, since it has no parent credential.
+A credential states the member when its `delegation` object holds it, whatever its value, so one that states it as `null` states a digest that is not its parent's.
+A re-delegation that states none, leaving the member out, is accepted as before, its parent named by its `parentId` alone; version 2.0.0 requires it of every re-delegation.
+An issuer that holds the parent credential when it signs a re-delegation SHOULD state it, and the reference implementation's `createAndIssueDelegation` writes it when given the parent as `options.parent`.
+The digest of a credential covers what the credential states, so a chain each of whose re-delegations states the member is fixed by the digest of its last credential alone, which is what a holder's request proof names (§7.8).
+The `delegation-chain/parent-digest-*` conformance vectors carry the member.
+
 A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim
 semantics out of an authorization decision — a confused-deputy vector (§11.6) —
 the `credentialSubject` MUST contain only two properties: `id` (the delegate's
@@ -723,6 +746,14 @@ interface DelegationConstraints {
 }
 ```
 
+#### Budget windows
+
+A CRISP `budget` with no `window` caps what the delegation spends for all time.
+A `rolling` window caps what it spends within any span of `durationSec` seconds.
+A `fixed` window counts from the Unix epoch, 1970-01-01T00:00:00Z: its windows are the consecutive spans from k × `durationSec` to (k + 1) × `durationSec` seconds after the epoch, for each whole number k, and the `cap` holds within each.
+A `fixed` window does not start when the credential does, so every delegation that states a `fixed` window of one `durationSec` has the same windows.
+An enforcer MUST count a `fixed` window so.
+
 #### CRISP scope matchers
 
 | `matcher` | Semantics | Intended value |
@@ -762,7 +793,15 @@ Delegations form a directed acyclic graph (DAG):
 - `parentId` links to the parent delegation
 - Child delegation's `issuerDid` MUST equal parent's `subjectDid`
 - Scope constraints MUST be equal to or narrower than parent's constraints
+- Under a parent that states a CRISP `budget` (§6.3), a verifier MUST reject a re-delegation that states none, or one that is not the parent's as written and is not narrower: a budget in the same `unit` whose `cap` is no higher, with no `window`, which caps all time, or, under a parent's window, a `rolling` window at least as long, or, under a parent's `fixed` window, a `fixed` window of the same `durationSec`.
+  A `fixed` window of the parent's `durationSec` has the parent's windows (§6.3), so its `cap` holds within each of them.
+  One that is shorter, or whose `durationSec` is not a whole multiple of the parent's, ends within one of the parent's windows and starts its next window there, and one under a `rolling` window starts wherever a charge falls, so either would let the re-delegation spend its cap twice within one of the parent's windows.
+  A `fixed` window a whole multiple as long contains whole windows of the parent's, and a verifier MUST still reject it, so that it compares a `fixed` window only as its parent states it.
+  A budget is compared only when it states a `unit` that is a string other than the empty one, a `cap` that is a finite number of 0 or more, and, if it states a `window`, a `kind` of `rolling` or `fixed` and a `durationSec` greater than 0, and no other member; a child's budget that is not compared passes only as its parent's, as written.
+- A member of `constraints`, or of `constraints.crisp`, that §6.3 does not define MUST be stated with an equal value (RFC 8785) by every re-delegation below the delegation that states it, as §6.10 requires of a caveat, and a verifier MUST reject a re-delegation that drops or changes one.
+  Whatever enforces such a member, or a budget, reads it from the presented credential alone, so a re-delegation that dropped or raised it would widen its parent.
 - A delegation that states no scopes of either kind (§6.3) grants none, so a verifier MUST reject a re-delegation under it that states any
+- A re-delegation that states `parentCredentialDigest` (§6.2) MUST state the digest of its parent credential, and a delegation with no `parentId` MUST NOT state one; a verifier MUST reject a chain in which either rule is broken
 - The root delegation's `issuerDid` MUST equal the `issuer` of its `DelegationCredential`, the DID whose key signs it (§6.2), and a verifier MUST reject a chain whose root names any other DID, so the Responsible Party is always a DID that signed
 - Every chain MUST terminate at a Responsible Party. The Responsible Party's DID is the `issuerDid` of the root `DelegationCredential` and is the entity ultimately accountable for actions taken under any descendant delegation. In personal use the Responsible Party equals the Principal; in organizational use the Responsible Party is the parent organization while the Principal is the immediate human delegator (see §2).
 
@@ -806,6 +845,13 @@ When a delegation is revoked:
 2. Recursively mark all descendant delegations as `revoked`
 3. Update StatusList2021 credential for each revoked delegation
 4. Emit revocation events for audit logging
+
+A server that reads revocation from its delegation graph reads a delegation's chain from a root down to it.
+When the graph holds a delegation but not that whole chain, as a replica that has not received a node, or a store that lost one, does not, the server cannot say whether an ancestor above the gap is revoked: it refuses the delegation as `status_unavailable` and never reads it as standing.
+A delegation the graph does not hold at all is read as not revoked there, since the server asks the graph about every credential of a chain, its ancestors among them.
+So the graph removes a delegation only once none is registered under it, and a removed delegation that reads as revoked leaves a record that its id is revoked.
+It leaves that record whether or not the delegation has a status list entry: a revocation whose write to the list failed, or left the list unchanged, is recorded in the graph alone.
+A removed delegation that does not read as revoked leaves no record, and its id may be registered again.
 
 #### 6.5.1 Revocation Rights
 
@@ -857,9 +903,54 @@ primary mechanism) and polling status lists frequently. The unavoidable
 race is the same trade-off familiar from PKI: short certificate lifetimes
 reduce the window during which a compromised credential can be used.
 
-### 6.6 StatusList2021 Revocation
+### 6.6 Status List Revocation
 
-KYA-OS uses the W3C StatusList2021 specification for revocation:
+KYA-OS publishes revocation as a status list, in the terms of W3C Bitstring Status List v1.0 [BITSTRING-STATUS-LIST], a W3C Recommendation:
+
+```json
+{
+  "@context": ["https://www.w3.org/ns/credentials/v2"],
+  "id": "https://example.com/status/1",
+  "type": ["VerifiableCredential", "BitstringStatusListCredential"],
+  "issuer": "did:web:example.com",
+  "validFrom": "2024-03-01T00:00:00Z",
+  "validUntil": "2024-03-08T00:00:00Z",
+  "credentialSubject": {
+    "id": "https://example.com/status/1#list",
+    "type": "BitstringStatusList",
+    "statusPurpose": "revocation",
+    "encodedList": "uH4sIAAAAAAAAA-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA",
+    "ttl": 300000
+  }
+}
+```
+
+A credential names its entry of that list as its `credentialStatus`:
+
+```json
+{
+  "id": "https://example.com/status/1#94567",
+  "type": "BitstringStatusListEntry",
+  "statusPurpose": "revocation",
+  "statusListIndex": "94567",
+  "statusListCredential": "https://example.com/status/1"
+}
+```
+
+The list's `encodedList` is a list of 131,072 entries with none set, the list of the [STATUS-LIST-2021] example written in the form below, and each example list leaves out its `proof` (§6.2).
+
+**Formats.** A status list is a `BitstringStatusListCredential`, the list of Bitstring Status List v1.0 and a [VC-DATA-MODEL-2.0] document, or a `StatusList2021Credential`, the list of [STATUS-LIST-2021] and a [VC-DATA-MODEL] 1.1 document, which the first succeeds.
+A list is of a format when it is typed as that format's list in both places its specification names: a `type` that includes `BitstringStatusListCredential` and a subject whose `type` is `BitstringStatusList` (Bitstring Status List v1.0 §2.2), or a `type` that includes `StatusList2021Credential` and a subject whose `type` is `StatusList2021`.
+A list typed as one in one place alone is of neither format, and a verifier MAY refuse it.
+A publisher SHOULD publish a `BitstringStatusListCredential`, and MUST write one as its §2.2 requires: a [VC-DATA-MODEL-2.0] document, whose first `@context` is `https://www.w3.org/ns/credentials/v2`, that states the start of its window as `validFrom`, its end as `validUntil`, and one string, or an array of them, as its `statusPurpose`.
+A publisher MAY publish a `StatusList2021Credential` instead, and a verifier MUST read a list of either format.
+An entry is of its list's format: a `BitstringStatusListEntry` names a `BitstringStatusListCredential`, whose `type` its §2.1 requires to include that value, and a `StatusList2021Entry` names a `StatusList2021Credential`.
+A publisher SHOULD NOT name a list of one format from an entry of the other: Bitstring Status List v1.0 §2.1 requires the list a `BitstringStatusListEntry` names to be a `BitstringStatusListCredential`.
+This specification does not require a verifier to refuse a credential for that alone, and the reference readers read the list an entry names as the format the list is typed as.
+An entry states one string as its `statusPurpose`, and an `id` it states MUST NOT be the URL of its list (§2.1).
+The reference implementation's `StatusList2021Manager` writes a `StatusList2021Credential` and `StatusList2021Entry` entries through the 1.x line, and a `BitstringStatusListCredential` and `BitstringStatusListEntry` entries when its `format` option is `BitstringStatusList`, which 2.0.0 makes its default.
+It keeps a stored list in the format the list was created in, and allocates no entry on a list of the other format.
+The same list as a `StatusList2021Credential` states its window as `issuanceDate` and `expirationDate`, and has no `ttl`:
 
 ```json
 {
@@ -871,6 +962,7 @@ KYA-OS uses the W3C StatusList2021 specification for revocation:
   "type": ["VerifiableCredential", "StatusList2021Credential"],
   "issuer": "did:web:example.com",
   "issuanceDate": "2024-03-01T00:00:00Z",
+  "expirationDate": "2024-03-08T00:00:00Z",
   "credentialSubject": {
     "id": "https://example.com/status/1#list",
     "type": "StatusList2021",
@@ -880,8 +972,6 @@ KYA-OS uses the W3C StatusList2021 specification for revocation:
 }
 ```
 
-The example's `encodedList` is a list of 131,072 entries with none set, the list of the [STATUS-LIST-2021] example written in the form below.
-
 **Encoding.** Under both StatusList2021 and Bitstring Status List v1.0, a list's `encodedList` is the multibase prefix `u` followed by the base64url encoding (RFC 4648 §5), without padding, of the GZIP (RFC 1952) compression of the list's bitstring, in which the entry at index 0 is the most significant bit of the first byte, as Bitstring Status List v1.0 §2.2 and §3.3 write it.
 A publisher MUST write `encodedList` in that form.
 For the 1.x line, a reader MUST also accept an `encodedList` in the legacy forms the reference implementation reads, alone or together: with no `u`; with any of its characters in the base64 alphabet (RFC 4648 §4), `+` standing for `-` and `/` for `_`; and with `=` after its last character, no more of them than complete its last group of four characters.
@@ -890,12 +980,12 @@ A reader MAY refuse an `encodedList` in any other form, such as one with white s
 2.0.0 removes the legacy forms.
 
 **Length.** A publisher MUST write a list of at least 131,072 entries, 16 KiB uncompressed, as Bitstring Status List v1.0 §2.2 requires, so that each credential's entry is one among many.
-The reference implementation's `StatusList2021Manager` writes 131,072 entries unless its `defaultListSize` option sets another size; a size below 131,072 writes a list this rule forbids.
+The reference implementation's `StatusList2021Manager` writes 131,072 entries unless its `defaultListSize` option sets another size; a size below 131,072 writes a `StatusList2021Credential` this rule forbids, and is refused, where the manager is built, for a `BitstringStatusListCredential`.
 For the 1.x line, for compatibility, a reader MUST NOT refuse a list for holding fewer entries.
 Bitstring Status List v1.0 §3.2 refuses such a list (step 9) unless a specification sets another lower bound (step 2), and this one sets none for 1.x; 2.0.0 refuses a list of fewer than 131,072 entries.
 Whatever its length, a list holds no entry at or past its end, so an index there is rejected (§6.7).
 
-A verifier that reads a `StatusList2021Credential` MUST verify its proof, as
+A verifier that reads a status list, of either format, MUST verify its proof, as
 §6.2 states, before reading any bit. A list whose proof does not verify is
 unresolvable: the credential it covers is rejected, never read as active.
 
@@ -922,7 +1012,9 @@ The comparison is on the bytes as written, with no parsing and no normalisation,
 A verifier SHOULD refuse, as a configuration error, a binding that is an origin followed by `/`, a binding that is an origin but for an upper-case letter (`A` to `Z`) in its host, and any other binding that ends in `/`, since each is almost always an origin or a prefix written in a form this section does not read as one.
 Read as this section reads it, each is an exact URL, which binds only an entry that names it byte for byte; any other exact URL, whatever the case of its host, is read as written.
 A verifier takes the URL the root's credential names (rule 3) only from a root credential whose proof it has verified, since until then the presenter of the chain wrote it.
-Once it has, the URL is the word of a root the verifier's configuration pins, so the verifier MAY read it as a URL its operator named, a private host included (§4.4.2), as it reads a URL its configuration binds; it MUST NOT read so the URL of a root credential whose proof it has not verified.
+Once it has, the URL is the word of a root the verifier's configuration pins, so the verifier MAY read it as a URL its operator named, a private host included (§4.4.2), as it reads a URL its configuration binds, where the URL is at the root's own origin: `https://` and the host, with its port if written, that the root's did:web DID names.
+It MUST NOT read so the URL of a root credential whose proof it has not verified, a URL at any other origin, or any URL of a root that is not a did:web DID, which names no host; its configuration binds such a URL in `statusListIssuers` to have it read so.
+The port is part of the origin, as in an origin binding, since one host may serve each party on a port of its own, and a root at one port does not speak for another.
 
 For an Entity Card's `revocation` entry the Card's `id` is the credential's own `issuer`, and the Card's `responsibleParty` takes the root's place once the Card's accountability check has verified it as the root issuer of the Card's delegation chain, with the list URL that check reports the root credential names (SPEC-ENTITY-CARD.md §10.3).
 A pinned root can revoke its own credential, which revokes every credential below it in its chains, so the list its own credential is on speaks for each credential of its chains that names that list.
@@ -930,7 +1022,8 @@ A root that keeps other lists for its delegates, the shards of one herd list for
 A deployment whose root credential carries no status entry does the same, since rule 3 then gives the root no URL.
 A verifier that pins no root reads the root's list only for the root's own credential, whose `issuer` the root is, and at the URLs its configuration binds to the root.
 The issuers between the root and the credential keep no URL but those of their own credentials' entries.
-A credential commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
+A credential that states no `parentCredentialDigest` (§6.2, §6.10) commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
+One that states it commits to the one parent credential it was signed under, and a chain each of whose hops but the root states it is fixed from the root to the credential.
 An issuer between them still revokes what it delegated, as §6.5.1 allows, by revoking its own credential on its own list, which the cascading chain walk (§6.10) carries to every credential below it.
 The credential's own `issuer` is the one the credential names, so that issuer is trusted only once the credential's proof verifies.
 The reference implementation's `DelegationCredentialVerifier` reads the credential's status only once that proof verifies (§4.4.2), and accepts the credential only when both checks pass.
@@ -975,8 +1068,21 @@ This holds for `issuanceDate` and `expirationDate` too, though [VC-DATA-MODEL] l
 A verifier MAY hold each bound with a tolerance for the difference between its clock and the issuer's, of no more than 600 seconds, the largest skew of §10.1: it then reads a list from its `validFrom` less the tolerance until its `validUntil` plus the tolerance.
 Without one, a list whose issuer stamps its `validFrom` with the moment it publishes the list is refused, for as long as the difference, by every verifier whose clock runs behind the issuer's.
 The reference implementation holds both bounds with a tolerance of 120 seconds, the default skew of §11.3, which each status-list reader's `maxClockSkewMs` option sets, from 0 to 600,000 milliseconds.
-A list that states no end is read until its issuer replaces it, so an earlier version of it can be served for as long as it verifies; an issuer that states a `validUntil`, and republishes the list before it passes, bounds that.
+A list that states no end is read until its issuer replaces it, so an earlier version of it can be served for as long as it verifies.
+An issuer SHOULD therefore state an end on every version of a list it signs, as the list's `validUntil` or, on a `StatusList2021Credential`, its `expirationDate`, and republish the list before that end passes.
+How long a version is valid, its validity period, is the issuer's to choose: it is the longest an earlier version can be served after a revocation, and Bitstring Status List v1.0 §7.2 suggests "no minimum or maximum validity period" for all status lists.
+A `BitstringStatusListCredential` MAY also state `credentialSubject.ttl`, which its §2.2 defines as "the "time to live" in milliseconds before a refresh SHOULD be attempted": a hint to a reader that keeps the list, which a publisher SHOULD serve the list's caching headers in agreement with, as that section says.
+A `ttl` is no part of the window, since "the value does not override or replace the validity period".
+A verifier MUST NOT read a list past its `validUntil` because its `ttl` has not run out.
+A `ttl` counts from when a reader fetched the list, never from the list's `validFrom`, so a verifier MUST NOT refuse, because of its `ttl`, a list it has just fetched inside its window.
+A `StatusList2021Credential` has no such member, since its context defines none, so a publisher SHOULD NOT state a `ttl` on one, and a verifier gives it no meaning there.
+The reference implementation's `StatusList2021Manager` states the end `validityPeriodMs` after it signs each version, when that option is set, and its `renewStatusList` signs a list again with a new end and the same bits.
+Without the option its lists state no end, through the 1.x line.
+Its `ttl` option is the `ttl` each `BitstringStatusListCredential` it signs states.
+It refuses, where it is built, a `ttl` for a `StatusList2021Credential`, and a `ttl` longer than its validity period, which no reader could keep to.
+The reference readers do not read `ttl`: each keeps a list or a verdict no longer than its own configuration says.
 In the reference implementation every status-list reader refuses a list outside its window with the transient code `status_unavailable`, since the issuer republishing the list ends it, and with a reason that names the bound and quotes the time the list states.
+That reason reaches the presenter only once the list's proof verifies (§6.10), so a reader that checks no proof, as the reference checker without its `verifyStatusList` seam, gives it to the operator's log, and the reason says only that the list could not be read or checked.
 An Entity Card's Entity keeps the URL its own Card names unless the verifier's configuration binds that URL to another issuer, so whoever holds the Entity's key and controls what the Card's `statusListCredential` URL returns can serve a list the Entity signed, with the Card's bit clear.
 Against a compromised Entity key, the responsible party revokes the root delegation credential, which the Card's accountability check reads (SPEC-ENTITY-CARD.md §12.5).
 
@@ -994,7 +1100,7 @@ L1 implementations do not require revocation support; revocation checking is ava
 Revocation does not require a globally accessible list. A verifier only needs to
 know whether a delegation has been revoked **for the resources it gates**, so the
 revocation state MAY be held as verifier-local state rather than fetched from an
-external URL. `StatusList2021` is the interoperable wire format for _publishing_
+external URL. A status list is the interoperable wire format for _publishing_
 revocation when the delegator and verifier are operationally decoupled; it is not
 a requirement to operate a public, globally-readable certificate-revocation list.
 A verifier that issues and gates its own delegations MAY check revocation entirely
@@ -1090,6 +1196,7 @@ marks a credential of this profile.
     "id": "urn:zcap:del_123",
     "invoker": "<delegate DID>",           // or "controller" (§2.3)
     "parentCapability": "<parent id | root invocationTarget>",
+    "parentCredentialDigest": "sha256:<64 hex>", // OPTIONAL; never on the root (below)
     "invocationTarget": "<resource DID>",
     "allowedAction": [ "payments.transfer" ],
     "caveats": [ { "type": "ValidUntil", "date": "…" },
@@ -1129,10 +1236,26 @@ chain:
 - **continuity** - the parent's delegate (`invoker`) MUST equal the child's `issuer` (you may only
   re-delegate what was delegated to YOUR key), and child `parentCapability` MUST reference the
   parent capability `id`;
+- **parent commitment** - a hop other than the root MAY state `parentCredentialDigest`, and when it
+  does it MUST be the digest of its parent credential (below); the root MUST NOT state one;
 - **constant `invocationTarget`** along the chain;
 - **root** - root `parentCapability` MUST equal its `invocationTarget` (the resource); when a
   resource owner / resource is asserted, root `issuer` MUST equal the resource owner and root
   `invocationTarget` MUST equal the resource.
+
+**The parent commitment.**
+Continuity ties a hop to its parent by two names, the parent's delegate and the parent's capability `id`, and both are the parent issuer's to choose.
+A parent issued again under the `id` of one that was revoked would therefore carry every hop signed under the first.
+A hop commits to the one parent credential it was signed under by stating, in its `credentialSubject`, `parentCredentialDigest`: the digest §7.8 gives that credential, `SHA-256(UTF8("org.kya-os.delegation.credential.v1") || 0x00 || JCS(signed form))`, written as `sha256:` and 64 lowercase hex digits.
+The signed form is every member of the parent but `proof`, and the signature its `proof.proofValue` carries, which §7.8 reads as it reads any signature string: six bits for each base64 or base64url character, the bits short of a byte dropped.
+A `proofValue` of this profile is multibase base58btc, each character of which is a base64 character, so §7.8 reads every one, and it MUST be read so and not decoded from base58, or two implementations would digest one parent differently.
+An `eddsa-jcs-2022` signature also covers the proof's configuration, so the digest fixes the parent and its whole proof, while a copy of the parent stored or serialized another way keeps its digest.
+It is the digest §7.8 gives each credential of a chain, so a party that holds those digests matches a hop's commitment against them.
+A verifier MUST check the digest of every hop that states one against the hop before it in the chain, as received, and MUST refuse the chain, as `chain_invalid`, when the two differ, when that hop has no signed form, or when the root states one, since the root has no parent credential.
+The reference implementation checks it after the local chain rules and before any hop proof, since it reads nothing from the network.
+A hop states the member when its `credentialSubject` holds it, whatever its value, so a hop that states it as `null` states a digest that is not its parent's, and a root that does states one.
+A hop that states none, leaving the member out, is accepted as before, its parent named by its `id` alone; version 2.0.0 requires it of every hop but the root.
+An issuer that holds the parent when it signs a hop SHOULD state it, and the reference implementation's `signDelegationCredential` writes it when given the parent as `options.parent`.
 
 **Caveats (fail-closed).** Every caveat of every hop applies to every call the chain authorizes.
 A `MaxAmount` states `limit`, one or more decimal digits optionally followed by `.` and one or more digits, and MAY state `currency`, a string.
@@ -1144,6 +1267,8 @@ A verifier that accepts a chain MUST hold each call to every caveat of every hop
 The reference implementation returns the chain's caveats on its verdict, at their tightest, and its `caveatRefusal` helper holds a call to them.
 
 **Validity window (fail-closed).** A chain is valid only while every hop is inside the window it states: no hop past its `validUntil` or a `ValidUntil` caveat's `date`, and none before its `validFrom`.
+A hop may also state its end as its `expirationDate`, the member [VC-DATA-MODEL] names for it, or as its proof's `expires`, after which [VC-DATA-INTEGRITY] has the proof expire, and its proof covers both, so a hop is past its end once any end it states has passed, whatever its `validUntil` says.
+Likewise a hop may state its start as its `issuanceDate`, the member [VC-DATA-MODEL] 1.1 names for it, which its proof covers, so a hop is before its start until every start it states, its `validFrom` and its `issuanceDate`, has come, whether or not it states a `validFrom`.
 Each of these, and each date the narrowing invariants compare, MUST be a date as §6.6 defines one, an [RFC3339] date-time with its offset from UTC.
 A hop that states one in any other form, a date-time with no offset included, is malformed and invalidates the chain.
 A verifier MAY hold each bound with the clock tolerance §6.6 permits for a status list, of no more than 600 seconds.
@@ -1170,7 +1295,11 @@ The reference checker does so when given its `verifyStatusList` seam (optional u
 With that seam it also holds each hop's list to the keeper §6.6 names for the URL of the hop's entry: the issuer its `statusListIssuers` option binds the URL or its origin to, else the chain's root issuer when the verifier pins it with its trusted root issuers or the resource owner it asserts and the root hop's own entry names the same URL, else the hop's own issuer.
 A list is read without an `id` only when the hop's own issuer signed it and keeps the URL as that issuer, not by a binding, no other root is pinned and `statusListIssuers` names no other issuer; any other list is read only when it states its URL as its `id`.
 The hop's own issuer is the one the hop names, so a verifier checks every hop's proof before it reads their status (SPEC-ENTITY-CARD.md §11.4).
-It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, a list outside the validity window it states (§6.6), list `issuer` that is not the keeper of the entry's URL, list `id` other than the `statusListCredential` URL, no list `id` where §6.6 requires one, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), an entry whose `statusSize`, when present, is not 1, or out-of-range index all resolve to `{ revoked: true }`, with a `reason` that says which.
+It is **fail-closed**: an unreachable list, malformed credential, rejected list proof, a list outside the validity window it states (§6.6), list `issuer` that is not the keeper of the entry's URL, list `id` other than the `statusListCredential` URL, no list `id` where §6.6 requires one, a list `statusPurpose` that does not include the checker's, a `statusPurpose` array on a list §6.6 holds to one string, an entry whose `statusPurpose`, when present, is not the checker's (`null` included), an entry whose `statusSize`, when present, is not 1, or out-of-range index all resolve to `{ revoked: true }`, with a `reason` that says which once the list's proof verifies, as below.
+Whoever presents an entry chooses the URL it names, so the document read there may be any JSON the verifier can reach.
+A verdict about a list reaches the presenter only once the list's proof verifies, since only then is what the list says its issuer's word; before that, the reason and the remedy go to the operator's log, and the `reason` says only that the list at the URL could not be read or checked, as for a list that could not be read.
+So a list refused for its `issuer`, its `id` or its `statusPurpose`, which the reference checker asks before the proof, or for its window where no proof is checked, has that `reason`, and the operator's log says which, with the `statusListIssuers` configuration that would accept a list another DID signed.
+This refines the rule that a refusal tells the presenter only what the DID or the URL alone decides, or a deadline: a verdict about a list that was read keeps its reason once the list's proof verifies, and not before.
 Each verdict also reports `fresh` - `true` only when read live from a status list inside its validity window (`validFrom`/`validUntil`, or `issuanceDate`/`expirationDate`), as every list the reference checker reads is, since it refuses one outside its window; a checker that answers from a cache reports `false` for a verdict it did not read live.
 The chain walk is **cascading**: root→leaf, short-circuiting on the first revoked/unresolvable hop (a revoked ancestor invalidates the subtree), with `fresh` the AND of every checked hop.
 L2 accepts a non-revoked chain (cached / offline acceptable); L3 additionally requires `fresh` (a live check).
@@ -1307,6 +1436,10 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
 }
 ```
 
+The header is part of the JWS signing input, so the signature covers every parameter of it.
+A holder's request proof carries one more parameter, `org.kya-os/delegation`, which states the delegation its call presents (§7.8).
+A verifier ignores a header parameter it does not know (RFC 7515 §4), so a proof that carries one verifies wherever a proof without it does, and the proof's `meta` holds no copy of it.
+
 **Payload** (canonicalized):
 ```json
 {
@@ -1322,7 +1455,8 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
 ```
 
 An envelope-profile proof (§7.3) additionally carries its `prf` claim in this payload — profile selection is signed, never advisory.
-Every optional `ProofMeta` member present on the proof (`scopeId`, `delegationRef`, `delegationChainDigest`, `clientDid`, `outcome`, `reason`, `prf`) appears in the payload; the mirrored `meta` block and the decoded payload MUST reconcile exactly.
+Every optional `ProofMeta` member present on the proof with a value (`scopeId`, `delegationRef`, `delegationChainDigest`, `clientDid`, `outcome`, `reason`, `prf`) appears in the payload, and one given as an empty string does not (see "Members no signature covers" below).
+Every member of the mirrored `meta` block that the payload signs MUST reconcile exactly with the decoded payload.
 
 **Denial** and **step-up** proofs have no response body, so `responseHash` is
 omitted and `outcome` (plus an optional `reason`) is included instead. Keys
@@ -1370,13 +1504,22 @@ A verifier MUST read a proof's JWS as follows, and MUST refuse a proof whose JWS
    This reading is for a proof and its key alone: §7.8 reads the third segment of a VC-JWT more loosely, as the JWS libraries that verify a credential read it.
 2. The header is a JSON text in UTF-8, an object whose `alg` is `EdDSA` and whose `kid` is the `kid` of the proof's `meta`.
    A payload segment, where the JWS carries one, is a JSON text in UTF-8 too.
+   Any other parameter of the header is acted on only once step 4 has verified the signature over that header, and of parameters that share a name the last is read, or the JWS is refused (RFC 7515 §4).
 3. The key is the Ed25519 key that `kid` names.
    Given as a JWK, it has `kty` `OKP`, `crv` `Ed25519` and the same `kid`, and its `x` is read as step 1 reads a segment, and is 32 bytes.
 4. The signature is verified over the header segment and the payload rebuilt from `meta` as above, written as base64url without padding.
    A payload segment the JWS carries that is not that one MUST verify under the same signature too.
 
-So every claim in `meta` is held to what was signed, and a proof whose `meta` differs from its payload fails.
+So every claim of `meta` that the payload signs is held to what was signed, and a proof whose signed claims differ from its payload fails.
 Reading a segment more loosely would let two strings stand for one signature, and a verifier that accepts one of them where another refuses it would give two verdicts on one proof.
+
+**Members no signature covers.**
+A generator writes in `meta` only the members the payload above signs, with `kid`, and writes no optional claim as an empty string.
+`schemas/detached-proof.json` describes that `meta`, the one a generator writes.
+A `meta` member no signature covers is a member the proof schema does not name, or an optional claim given as an empty string, which the payload leaves out.
+A verifier MUST NOT return or act on a `meta` member no signature covers.
+In 1.x a verifier ignores such members, and reads an empty optional claim as absent, so the proof verifies on what its signature covers and the `meta` it hands back holds nothing else.
+From 2.0.0 a verifier refuses a proof whose `meta` carries a member no signature covers.
 
 ### 7.5 _meta Attachment
 
@@ -1647,11 +1790,11 @@ A caller chooses what it presents, so anyone can have a server sign a reference 
 The digest of a refusal covers the credentials the server had examined when it refused, root first:
 
 - A call refused after its chain verified (on scope, on holder binding, by policy, or by the handler): the whole chain.
-- A chain refused part way through: the ancestors examined, up to and including the one the server stopped at, then the presented credential.
+- A chain refused part way through, once the presented credential passed its own checks: the ancestors examined, up to and including the one the server stopped at, then the presented credential.
   The ancestors after that one are not covered, although the server may have read them to assemble the chain.
 - A presentation refused before any ancestor was examined: the presented credential alone.
   That is a VC-JWT whose header or payload is not read as JSON, or whose claims are not a delegation credential's, a credential object that is not a delegation credential, ancestors that could not be resolved into a chain of delegation credentials, a chain longer than the server evaluates (§6.4), and a chain whose links, or whose root's issuer, the server refuses, which it checks before it verifies any credential.
-  A VC-JWT whose envelope signature does not verify is refused when the server reaches it, after its ancestors, as the last credential of a chain refused part way through.
+  So is a presented credential the server refuses on its own, as one that does not verify, a VC-JWT whose envelope signature does not among them, or whose audience does not admit the server: the server examines the presented credential before any ancestor, so that a party who cannot sign as its parent's subject costs no ancestor's verification and learns nothing of an ancestor's standing.
 - No digest, whichever case above the refusal is, when the presented value has no signed form, when a credential the server examined has none, or when a value handed to the server for the chain could not be read at all.
   A credential object nested past the bound has no signed form, and the server does not read one handed to it for the chain, nor a value that is not JSON data, such as an in-process object that is not plain data.
   The proof carries `delegationRef` where the presented value shows an id.
@@ -1670,11 +1813,46 @@ A verifier that holds a chain, and is to take a proof as evidence that the serve
 
 A verifier that holds only part of the chain, such as a caller that knows its own credential and not the ancestors the server resolved, cannot recompute the digest and leaves the comparison to a party that can.
 
+**A holder's request proof.**
+A holder-of-key request proof (§11.8) covers the call: the tool and its business arguments (§7.3).
+The delegation rides beside it, outside the request hash, so the proof alone is good beside any delegation of its subject.
+A party on the path that holds another delegation of the same subject, and no key, could put it in place of the one the holder chose, or take the delegation away so that authority the server retains for another one answers, and the call would be decided under a grant the holder did not choose.
+Nothing is replayed, so a nonce does not prevent it.
+The holder therefore states which delegation its call presents, where its signature covers the statement and every verifier of an earlier version still verifies the proof: in the protected header of the proof's JWS (§7.4), as the parameter `org.kya-os/delegation`.
+
+- **The statement** is the credential digest (step 2 above) of the credential the call presents, in the form it is sent, a credential object or a VC-JWT, written as `sha256:` and 64 lowercase hex digits; or the string `none`, for a call that presents no delegation.
+  It names the presented credential alone, the last of its chain, so a holder needs no ancestor to make it.
+- **A holder** MUST state it in every request proof it makes: the digest of the credential the call presents, or `none`.
+  A holder that makes its proof before it attaches the delegation states the delegation it will attach, never `none`.
+  A value with no signed form has no digest and is no credential, so a proof for a call that sends one states nothing, and the call's verifier refuses the value whatever the proof says.
+- **A verifier** that checks a request proof for a delegated call MUST read the statement only from the protected header of the JWS whose signature it has verified (§7.4), and never from an unprotected header, the proof's `meta`, or the arguments of the call.
+  It MUST refuse a proof whose statement is neither a credential digest nor `none`.
+  When the call presents a credential, it MUST digest that credential in the form received, and MUST refuse a proof that states the digest of another.
+  When the call presents none, and the verifier would authorize it under authority it retains from an earlier presentation, it MUST authorize a proof that states a credential digest only under authority retained for that credential.
+  It MUST refuse a request proof whose signed `delegationRef` is not the reference of the presented credential, or is stated where that credential shows no id, or whose signed `delegationChainDigest` is not the digest of the chain the verifier evaluated for the call; a holder has no need to sign either member.
+- **A proof that names no credential** is one that states nothing, as a proof made before this parameter existed does, or one that states `none` beside a presented credential.
+  It is bound to its subject alone, so the substitution above still succeeds against it.
+  A verifier SHOULD refuse it, and SHOULD refuse a proof that states nothing for a call that presents no delegation.
+  During the transition a verifier MAY accept such a proof, so that holders of an earlier version keep working; one that does MUST NOT report the call as bound to its delegation by the holder, and SHOULD record that the proof named none.
+  Version 2.0.0 of this specification makes each of these refusals a MUST.
+
+The statement fixes the ancestors too, wherever each re-delegation states `parentCredentialDigest` (§6.2, §6.10): the digest of the presented credential covers the digest it states of its parent, and so on to the root.
+Where a credential states none, its parent is named by an id alone, and neither the statement nor anything else the holder signs fixes it.
+A verifier that reports whether a call's delegation is fixed by the holder reports both: whether the proof named the presented credential, and whether every re-delegation of the chain it evaluated states its parent's digest.
+
+The proof of the Entity Card profile (`org.kya-os/proof.v1`, SPEC-ENTITY-CARD.md §8) carries the same parameter in the protected header of its detached JWS, where the credential presented is the last of the chain the request carries, and is held by the same rules.
+
+The reference implementation's `generateRequestProof` makes the statement from the arguments it is given, `_kyaos_delegation` among them, with no further input, and its `verifyDelegatedCallProof` holds a proof to the credential a call presented, which it takes as a required input.
+Its server accepts a proof that names no credential by default, with a warning, through 1.x (`delegation.requestBinding: 'prefer'`), refuses one under `'require'`, and refuses one by default from 2.0.0.
+Appendix C.5 gives a vector, and the `signed-proof/request-binding-*` conformance vectors hold a verifier to each rule.
+
 **Compatibility.**
 `delegationChainDigest` is a new signed claim.
 A verifier that predates it rebuilds the payload of §7.4 without it and rejects the proof, so a producer SHOULD make the claim an explicit opt-in until the verifiers of its proofs know it.
 Signing either member from the server is not part of this release of the reference implementation: its server sets neither `delegationRef` nor `delegationChainDigest`, and its verifier checks both against a chain it is given.
 `delegationRef` has been a payload member since the first version of this chapter and needs no opt-in.
+The statement of a holder's request proof is a protected header parameter, and not a payload claim, for this reason: a verifier that predates it ignores the parameter (RFC 7515 §4) and verifies the proof as it did before, and one that knows it holds the proof to it.
+Releases 1.11.0 to 1.25.0 of the reference implementation accept a request proof that carries the parameter, and refuse one whose header was changed after signing (UPGRADING.md).
 
 ---
 
@@ -1689,7 +1867,7 @@ When an MCP server calls downstream services (APIs, other MCP servers), it MUST 
 | `KYA-OS-Delegation-Credential` | **AUTHORITATIVE** | The delegation Verifiable Credential (VC-JWT). The verifier derives granted scopes and the delegation chain from it (its embedded scopes, its chain to a trusted root, its StatusList revocation state). |
 | `KYA-OS-Delegation-Proof` | **AUTHORITATIVE** | The holder-of-key delegation proof JWT (EdDSA-signed, `aud`-bound to the request authority, `sub` == the Layer-1 signature DID); see §8.2. |
 | `KYA-OS-Agent-DID` | **AUTHORITATIVE** | The agent's DID. A conformant verifier MUST check it equals the Layer-1 signature's resolved DID. |
-| `KYA-OS-Session-Id` | Anchor | The KYA-OS session ID, used for grant read-back. An anchor, not an authorization input. |
+| `KYA-OS-Session-Id` | Anchor | An anchor of the forwarding server's session for the target's host; never the session ID itself. An anchor, not an authorization input. |
 | `KYA-OS-Delegation-Chain` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
 | `KYA-OS-Granted-Scopes` | OPTIONAL (advisory) | A transport hint for routing/observability/debugging. **MUST NOT** be used for any authorization decision; ignored when it disagrees with the credential. |
 
@@ -1703,6 +1881,15 @@ Layer-1 signature's resolved DID. `KYA-OS-Delegation-Chain` and
 `KYA-OS-Granted-Scopes` are advisory only: a conformant verifier MUST NOT trust
 them for any authorization decision and MUST ignore them when they disagree with
 the credential.
+
+**The session anchor.** A server that resolves anything by its session ID alone, as a durable grant bound to a session is resolved, makes that ID a bearer of the session.
+A forwarding server MUST NOT send its session ID downstream, since every service it calls, and whatever logs or proxies their headers, would then hold it.
+It sends instead an anchor of the session for the target: the reference implementation sends `SHA-256(UTF8("org.kya-os.outbound.session-anchor.v1") || 0x00 || JCS([sessionId, host]))`, in the hash format of §7.3, where `host` is the target's host, the `aud` of §8.2.
+The anchor is one value for every call of one session to one host, so the target can tell which of its calls one session made, and it names nothing the target could present to the forwarding server.
+
+**A delegation in force.** A forwarding server MUST NOT forward a delegation that is not in force for it: one that is not active, is before its `notBefore` or past its `notAfter`, or names an `audience` that does not admit the forwarding server's DID.
+A delegation the forwarding server may not act under is not its to hand on, and forwarding it would send the credential and a fresh proof for it to every service it calls.
+The reference implementation's `buildOutboundDelegationHeaders` throws for such a record and builds no header.
 
 **Corollary (covered components).** Because authority is derived only from signed
 artifacts — the VC and the proof JWT, each with independent integrity — the
@@ -1951,6 +2138,7 @@ and the residual risk an operator carries.
 | **Downgrade** — a client strips KYA-OS headers entirely. | Fail-closed: servers requiring identity MUST reject sessionless calls; `/.well-known/mcp` advertises requirements. See §11.7. | A non-compliant client that the operator has not configured to require identity. |
 | **Consent-URL substitution** — a malicious in-path intermediary swaps the `authorizationUrl` in a `needs_authorization` challenge to phish the user toward an attacker-controlled consent page. | The challenge is signed (`outcome: 'needs_authorization'`); its `responseHash` binds the challenge content incl. the URL (§7.4, §9.2). A client recomputes `responseHash` over the received challenge and verifies the proof against the resource DID, detecting the swap. | A client that does not verify the challenge proof / recompute the hash — the check is the verifier's responsibility (a §11.7-style downgrade). TLS protects the URL in transit; this adds defense against a malicious in-path component. |
 | **Delegation substitution** - after the fact, a party presents a different chain as the one a signed call was decided under: a credential re-issued under the same id, or another set of ancestors. | `delegationChainDigest` in the response proof, covered by the signature, over every credential the server evaluated; on a refusal as well as on an allowed call (§7.8). | A proof without the digest names the delegation by `delegationRef` alone, a name, so a verifier that needs the binding must require the digest. |
+| **Delegation swapped in flight** - a party on the path that holds no key forwards a holder's genuine request proof beside another delegation of the same agent, or with the delegation removed or added, so the call is decided under a grant the holder did not choose. | The request proof states the §7.8 digest of the credential its call presents, or `none`, in the JWS protected header its signature covers, and a verifier holds the proof to the credential presented (§7.8); `parentCredentialDigest` fixes each ancestor (§6.2, §6.10). | A proof that names no credential, which a verifier MAY still accept during the transition (§7.8); a re-delegation that states no parent digest; a subject whose key the verifier cannot bind (§11.8). |
 | **Refusal shown as acceptance** - a party presents a chain of its own making, is refused, and shows the signed refusal, whose digest is that chain's, as evidence that the server accepted it. | The proof's `outcome` is covered by the signature, and a verifier that checks a chain rejects any outcome but the one it expects, an allowed call unless it says otherwise (§7.8). | A verifier that compares the digest and not the outcome. |
 | **Denial of service** | Per-session and per-handshake rate limiting; session caps; external session storage with TTL eviction. See §11.9. | Standard transport-layer DoS exposure (DDoS) is out of scope — operators rely on conventional network defenses. |
 
@@ -2264,10 +2452,12 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 - **[VC-DATA-MODEL]** W3C. *Verifiable Credentials Data Model v1.1*. https://www.w3.org/TR/vc-data-model/
 - **[VC-DATA-MODEL-2.0]** W3C. *Verifiable Credentials Data Model v2.0*. https://www.w3.org/TR/vc-data-model-2.0/
 - **[VC-DI-EDDSA]** W3C. *Data Integrity EdDSA Cryptosuites v1.0*. https://www.w3.org/TR/vc-di-eddsa/
+- **[VC-DATA-INTEGRITY]** W3C. *Verifiable Credential Data Integrity 1.0*. https://www.w3.org/TR/vc-data-integrity/
 - **[URL]** WHATWG. *URL Standard*. https://url.spec.whatwg.org/
 - **[DID-KEY]** W3C CCG. *did:key Method Specification*. https://w3c-ccg.github.io/did-method-key/
 - **[DID-WEB]** W3C CCG. *did:web Method Specification*. https://w3c-ccg.github.io/did-method-web/
 - **[STATUS-LIST-2021]** W3C CCG. *Status List 2021*. https://w3c-ccg.github.io/vc-status-list-2021/
+- **[BITSTRING-STATUS-LIST]** W3C. *Bitstring Status List v1.0*. https://www.w3.org/TR/vc-bitstring-status-list/
 - **[RFC8037]** IETF. *CFRG Elliptic Curve Diffie-Hellman (ECDH) and Signatures in JOSE*. https://datatracker.ietf.org/doc/html/rfc8037
 - **[RFC7517]** IETF. *JSON Web Key (JWK)*. https://datatracker.ietf.org/doc/html/rfc7517
 - **[RFC7515]** IETF. *JSON Web Signature (JWS)*. https://datatracker.ietf.org/doc/html/rfc7515
@@ -2490,6 +2680,114 @@ sha256:d29d65862fce70137390bea2859696c7ad80ce88cede778fea1cab24d513eed1
 **`delegationChainDigest`** (SHA-256 over `org.kya-os.delegation.chain.v1`, a zero byte, and the line above):
 ```
 sha256:2df99ab7f9b80436dba945e0dfb7a37bd7b35400c82bbc72a5c2744f516eb788
+```
+
+### C.5 Request Proof Naming Its Delegation
+
+A holder's request proof that states the delegation its call presents (§7.8), signed, so that an implementation can reproduce it to the last byte: Ed25519 signs deterministically.
+The holder's key is the first test key of RFC 8032 §7.1, and its DID is the did:key §4.3 derives for it.
+The credential is shortened as in C.4, and its own signature is not meant to verify.
+
+**Holder private key (32 bytes, hex):**
+```
+9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60
+```
+
+**Holder public key (32 bytes, hex):**
+```
+d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
+```
+
+**Verification method (`kid`):**
+```
+did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw
+```
+
+**Credential presented (object):**
+```json
+{
+  "id": "urn:uuid:2222-bbbb",
+  "type": ["VerifiableCredential", "DelegationCredential"],
+  "issuer": "did:web:user.example.com",
+  "credentialSubject": { "id": "did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw" },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2024-03-01T12:00:00Z",
+    "verificationMethod": "did:web:user.example.com#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw"
+  }
+}
+```
+
+**Signed form, canonical (RFC 8785):**
+```
+{"credential":{"credentialSubject":{"id":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw"},"id":"urn:uuid:2222-bbbb","issuer":"did:web:user.example.com","type":["VerifiableCredential","DelegationCredential"]},"signature":"c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw"}
+```
+
+**Credential digest**, which the proof states:
+```
+sha256:52bf13b89717bcec22e230f770471f09746b081b7f73da43094cd9aad511dc1a
+```
+
+**Protected header**, as signed:
+```
+{"alg":"EdDSA","kid":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","org.kya-os/delegation":"sha256:52bf13b89717bcec22e230f770471f09746b081b7f73da43094cd9aad511dc1a"}
+```
+
+**Payload, canonical**, for the call of C.1 whose business arguments are `{"msg":"hi"}`:
+```
+{"aud":"did:web:server.example.com","iss":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","nonce":"bm9uY2UtYzUtMDAwMDAwMQ","requestHash":"sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7","sessionId":"kyaos_c5-session","sub":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","ts":1710288000}
+```
+
+**Compact JWS** (`BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)`):
+```
+eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3I3o2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1Njo1MmJmMTNiODk3MTdiY2VjMjJlMjMwZjc3MDQ3MWYwOTc0NmIwODFiN2Y3M2RhNDMwOTRjZDlhYWQ1MTFkYzFhIn0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3Iiwibm9uY2UiOiJibTl1WTJVdFl6VXRNREF3TURBd01RIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInNlc3Npb25JZCI6Imt5YW9zX2M1LXNlc3Npb24iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsInRzIjoxNzEwMjg4MDAwfQ.wn1TFvrzCXbbYlB4f8q3g3JTJvVZOO7CzyutpqvVILWfAo1Xg-VXJZ1H0lbVgfi_ImIPdytpT561MBCOUqwtBw
+```
+
+A verifier that is presented the credential above beside this proof binds it.
+One that is presented any other credential, the same one with another `proofValue` included, refuses it, since that credential has another digest.
+
+**The same delegation sent as a compact VC-JWT** has another signed form, so another digest, and a proof names the form its call sends.
+The VC-JWT is shortened as the object is: its header is `{"alg":"EdDSA","typ":"JWT"}`, and its payload states the `iss`, `sub` and `jti` of the credential above.
+
+**Credential presented (compact VC-JWT):**
+```
+eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnVzZXIuZXhhbXBsZS5jb20iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsImp0aSI6InVybjp1dWlkOjIyMjItYmJiYiIsInZjIjp7InR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdfX0.c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw
+```
+
+**Signed form, canonical (RFC 8785):**
+```
+{"jwt":"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnVzZXIuZXhhbXBsZS5jb20iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsImp0aSI6InVybjp1dWlkOjIyMjItYmJiYiIsInZjIjp7InR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdfX0","signature":"c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw"}
+```
+
+**Credential digest**, which the proof states:
+```
+sha256:118311d6a525a36fe5e3d7fc5dc67b7e4fdd032d8b9b71799b476a82cbacb1ca
+```
+
+**Protected header**, as signed:
+```
+{"alg":"EdDSA","kid":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","org.kya-os/delegation":"sha256:118311d6a525a36fe5e3d7fc5dc67b7e4fdd032d8b9b71799b476a82cbacb1ca"}
+```
+
+**Compact JWS**, over the same payload:
+```
+eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3I3o2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjoxMTgzMTFkNmE1MjVhMzZmZTVlM2Q3ZmM1ZGM2N2I3ZTRmZGQwMzJkOGI5YjcxNzk5YjQ3NmE4MmNiYWNiMWNhIn0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3Iiwibm9uY2UiOiJibTl1WTJVdFl6VXRNREF3TURBd01RIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInNlc3Npb25JZCI6Imt5YW9zX2M1LXNlc3Npb24iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsInRzIjoxNzEwMjg4MDAwfQ.tki3aTL2MZwFUmKHZHQ28GRmI1kEahphrsJr-1v245z4M_n-qVp_Wabn-gdaIFjy1YYHCFalRarTOMzs9DT1Dg
+```
+
+A verifier that is presented the VC-JWT beside this proof binds it, and refuses it beside the credential object, as it refuses the proof above beside the VC-JWT.
+
+**For a call that presents no delegation**, the same holder states `none`.
+
+**Protected header**, as signed:
+```
+{"alg":"EdDSA","kid":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","org.kya-os/delegation":"none"}
+```
+
+**Compact JWS**, over the same payload:
+```
+eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3I3o2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6Im5vbmUifQ.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3Iiwibm9uY2UiOiJibTl1WTJVdFl6VXRNREF3TURBd01RIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInNlc3Npb25JZCI6Imt5YW9zX2M1LXNlc3Npb24iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsInRzIjoxNzEwMjg4MDAwfQ.o0ar1iBiL7mHkjvhOEvKqgtBqxG5t6O_byDoAqUv3ZXB9pwvlCHqG9fhFS1ugg2vznN1D-FFgpI_LCly9FAJBA
 ```
 
 ---

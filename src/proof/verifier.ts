@@ -10,26 +10,24 @@ import { ClockProvider, CryptoProvider, FetchProvider, NonceCacheProvider } from
 import { nonceRetentionSeconds } from "../providers/nonce-retention.js";
 import { admitNonce, checkNonceStore } from "../providers/nonce-admission.js";
 import { fetchProofKey } from "./proof-key.js";
-import {
-  validateDetachedProof,
-  type DetachedProof,
-  type MetaPolicy,
-} from "../types/protocol.js";
+import type { DetachedProof } from "../types/protocol.js";
 import { canonicalizeJson } from "../utils/canonical-json.js";
 import { dependencyTimeout } from "../utils/deadline.js";
 import {
   PROOF_VERIFICATION_ERROR_CODES,
 } from "./errors.js";
 import type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
-import {
-  buildProofJwsPayload,
-  KYA_OS_PROOF_META_KEY,
-  LEGACY_NAMESPACED_PROOF_META_KEY,
-  LEGACY_PROOF_META_KEY,
-} from "./generator.js";
+import { buildProofJwsPayload } from "./generator.js";
 import { bindingFailure, findBindingMismatch, type ExpectedContent } from "./binding.js";
+import {
+  handleVerificationError,
+  validateProofStructure,
+  validateSigner,
+  withSignedMeta,
+} from "./verification-checks.js";
 
 export type { ProofVerificationOptions, ProofVerificationResult, ProofVerifierConfig } from "./verifier-types.js";
+export { extractProofFromMeta, isReservedMcpMetaKey, validateMetaStructure } from "./meta-extraction.js";
 
 /** Default timestamp skew for proof verification (seconds) */
 export const DEFAULT_CLOCK_SKEW_SECONDS = 120;
@@ -106,6 +104,11 @@ export class ProofVerifier {
    * This path uses the caller-supplied key. The caller must retrieve it from the
    * signer's assertionMethod; fetchPublicKeyFromDID enforces that relationship.
    *
+   * Reads only the meta the signature covers (SPEC §7.4): a member of `proof.meta`
+   * no signature covers is ignored, and an optional claim written as "" is read
+   * as absent. A valid result carries that meta as `meta`; read it, not
+   * `proof.meta`.
+   *
    * Reconstructs the canonical payload from proof.meta and checks the JWS
    * signature, nonce replay, and timestamp skew — proving the proof is AUTHENTIC
    * (signed by the holder of `kid`). On its own this does NOT confirm that the
@@ -152,19 +155,19 @@ export class ProofVerifier {
     options: ProofVerificationOptions = {},
   ): Promise<ProofVerificationResult> {
     try {
-      const structureValidation = await this.validateProofStructure(proof);
+      const structureValidation = await validateProofStructure(proof);
       if (!structureValidation.valid) return structureValidation;
       const validatedProof = structureValidation.proof!;
 
-      return await this.runVerificationPipeline(
+      return withSignedMeta(await this.runVerificationPipeline(
         validatedProof,
         publicKeyJwk,
         this.encodeCanonicalPayload(validatedProof.meta),
         expected,
         options,
-      );
+      ), validatedProof.meta);
     } catch (error) {
-      return this.handleVerificationError(error);
+      return handleVerificationError(error);
     }
   }
 
@@ -185,10 +188,10 @@ export class ProofVerifier {
     expected?: ExpectedContent,
   ): Promise<ProofVerificationResult> {
     try {
-      const structureValidation = await this.validateProofStructure(proof);
+      const structureValidation = await validateProofStructure(proof);
       if (!structureValidation.valid) return structureValidation;
       const validatedProof = structureValidation.proof!;
-      const signerValidation = this.validateSigner(validatedProof.meta);
+      const signerValidation = validateSigner(validatedProof.meta);
       if (!signerValidation.valid) return signerValidation;
 
       const signatureValidation = await this.verifySignature(
@@ -200,11 +203,11 @@ export class ProofVerifier {
       if (!signatureValidation.valid) return signatureValidation;
 
       if (expected !== undefined) {
-        return this.validateContentBinding(validatedProof, expected);
+        return withSignedMeta(await this.validateContentBinding(validatedProof, expected), validatedProof.meta);
       }
-      return { valid: true };
+      return { valid: true, meta: validatedProof.meta };
     } catch (error) {
-      return this.handleVerificationError(error);
+      return handleVerificationError(error);
     }
   }
 
@@ -230,7 +233,7 @@ export class ProofVerifier {
     publicKeyJwk: Ed25519JWK
   ): Promise<ProofVerificationResult> {
     try {
-      const structureValidation = await this.validateProofStructure(proof);
+      const structureValidation = await validateProofStructure(proof);
       if (!structureValidation.valid) return structureValidation;
       const validatedProof = structureValidation.proof!;
 
@@ -247,9 +250,12 @@ export class ProofVerifier {
         };
       }
 
-      return await this.runVerificationPipeline(validatedProof, publicKeyJwk, metaPayload);
+      return withSignedMeta(
+        await this.runVerificationPipeline(validatedProof, publicKeyJwk, metaPayload),
+        validatedProof.meta,
+      );
     } catch (error) {
-      return this.handleVerificationError(error);
+      return handleVerificationError(error);
     }
   }
 
@@ -266,7 +272,7 @@ export class ProofVerifier {
   ): Promise<ProofVerificationResult> {
     // 1. Signer binding: kid belongs to the claimed did, and did and audience
     // are the ones the caller expects.
-    const signerValidation = this.validateSigner(validatedProof.meta, options);
+    const signerValidation = validateSigner(validatedProof.meta, options);
     if (!signerValidation.valid) {
       return signerValidation;
     }
@@ -318,51 +324,6 @@ export class ProofVerifier {
   }
 
   /**
-   * Bind the signing key to the principal. `kid` names the signing key; when
-   * it is an absolute DID URL its DID part must be `meta.did`, or a proof could
-   * claim a victim's DID while being signed by a key another DID publishes. A
-   * relative `kid` is resolved against `meta.did`. Then apply the caller's
-   * expected signer and audience, if given.
-   * @private
-   */
-  private validateSigner(
-    meta: DetachedProof["meta"],
-    options: ProofVerificationOptions = {},
-  ): ProofVerificationResult {
-    const kidOwner = didOfKid(meta.kid);
-    if (kidOwner !== undefined && kidOwner !== meta.did) {
-      return {
-        valid: false,
-        reason: "Proof kid names a key of a different DID than meta.did",
-        errorCode: PROOF_VERIFICATION_ERROR_CODES.KID_DID_MISMATCH,
-        details: { did: meta.did, kid: meta.kid },
-      };
-    }
-    if (options.expectedDid !== undefined && meta.did !== options.expectedDid) {
-      return {
-        valid: false,
-        reason: "Proof was not issued by the expected DID",
-        errorCode: PROOF_VERIFICATION_ERROR_CODES.DID_MISMATCH,
-        details: { did: meta.did, expectedDid: options.expectedDid },
-      };
-    }
-    if (options.expectedAudience !== undefined) {
-      const allowed = Array.isArray(options.expectedAudience)
-        ? options.expectedAudience
-        : [options.expectedAudience];
-      if (!allowed.includes(meta.audience)) {
-        return {
-          valid: false,
-          reason: "Proof is addressed to a different audience",
-          errorCode: PROOF_VERIFICATION_ERROR_CODES.AUDIENCE_MISMATCH,
-          details: { audience: meta.audience, expectedAudience: options.expectedAudience },
-        };
-      }
-    }
-    return { valid: true };
-  }
-
-  /**
    * Recompute the canonical hashes of the request/response the verifier actually
    * received (via the same hashing the signer used) and compare to the proof's
    * bound hashes. Fails CONTENT_BINDING_MISMATCH on any divergence — the check
@@ -382,49 +343,6 @@ export class ProofVerifier {
       (bytes) => this.cryptoProvider.hash(bytes),
     );
     return mismatch === undefined ? { valid: true } : { valid: false, ...bindingFailure(mismatch) };
-  }
-
-  /**
-   * Handle verification errors consistently
-   * @private
-   */
-  private handleVerificationError(error: unknown): ProofVerificationResult {
-    return {
-      valid: false,
-      reason: "Proof verification error",
-      errorCode: PROOF_VERIFICATION_ERROR_CODES.VERIFICATION_ERROR,
-      error: error instanceof Error ? error : new Error(String(error)),
-      details: {
-        errorMessage: error instanceof Error ? error.message : String(error),
-      },
-    };
-  }
-
-  /**
-   * Validate proof structure
-   * @private
-   */
-  private async validateProofStructure(
-    proof: DetachedProof
-  ): Promise<ProofVerificationResult & { proof?: DetachedProof }> {
-    const validationResult = validateDetachedProof(proof);
-    if (!validationResult.success) {
-      return {
-        valid: false,
-        reason: "Invalid proof structure",
-        errorCode: PROOF_VERIFICATION_ERROR_CODES.INVALID_PROOF_STRUCTURE,
-        error: new Error(
-          `Proof validation failed: ${validationResult.error?.message}`
-        ),
-        details: {
-          validationError: validationResult.error?.message,
-        },
-      };
-    }
-    return {
-      valid: true,
-      proof: validationResult.data,
-    };
   }
 
   /**
@@ -559,129 +477,6 @@ export class ProofVerifier {
   }
 }
 
-/**
- * The DID an absolute DID URL `kid` (`did:…#frag`, the form proofs carry)
- * names, or undefined for a relative `kid` (`frag` or `#frag`), which is
- * resolved against the proof's `did`.
- */
-function didOfKid(kid: string): string | undefined {
-  return kid.startsWith("did:") ? kid.split("#")[0] : undefined;
-}
-
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, index) => byte === b[index]);
-}
-
-/**
- * MCP-reserved / standard `_meta` keys a KYA-OS verifier MUST tolerate but
- * never hash or trust (MCP 2026-07-28 / SEP-414): the `io.modelcontextprotocol/*`
- * reverse-DNS namespace reserved by the MCP maintainers, and the W3C Trace
- * Context propagation keys. Allowlisted so their presence is unambiguously not a
- * cause for rejection under any policy.
- */
-const RESERVED_MCP_META_PREFIXES = ['io.modelcontextprotocol/'] as const;
-const RESERVED_MCP_META_KEYS = ['traceparent', 'tracestate', 'baggage'] as const;
-
-/**
- * Whether `key` is an MCP-reserved / standard `_meta` key (SEP-414) that KYA-OS
- * tolerates: never hashed, never trusted, never a cause for rejection. Exposed
- * so adopters can classify coexisting `_meta` keys with the same allowlist the
- * verifier uses. See {@link validateMetaStructure}.
- */
-export function isReservedMcpMetaKey(key: string): boolean {
-  return (
-    (RESERVED_MCP_META_KEYS as readonly string[]).includes(key) ||
-    RESERVED_MCP_META_PREFIXES.some((prefix) => key.startsWith(prefix))
-  );
-}
-
-/**
- * Validate _meta structure according to meta policy.
- *
- * The KYA-OS proof rides under {@link KYA_OS_PROOF_META_KEY} (reverse-DNS,
- * SEP-414); the prior {@link LEGACY_NAMESPACED_PROOF_META_KEY} and the legacy
- * bare {@link LEGACY_PROOF_META_KEY} are still accepted for back-compat. All
- * three are treated as the proof key. Every other key is a
- * non-KYA-OS `_meta` key.
- *
- * Under MCP 2026-07-28 `_meta` is shared real estate (it also carries
- * `io.modelcontextprotocol/*` and W3C trace-context keys), so NEITHER policy
- * rejects foreign keys — the prior `strict` reject-extras behavior would have
- * made a conformant KYA-OS verifier reject conformant RC traffic. Both policies
- * carry the identical zero-trust boundary: only the proof key is ever hashed or
- * trusted; reserved/foreign keys ({@link isReservedMcpMetaKey} and any other)
- * pass through untouched.
- *
- * - `strict` (default): non-KYA-OS keys are IGNORED (discarded) — never hashed,
- *   trusted, or rejected.
- * - `allow-extensions`: identical trust boundary, but the non-KYA-OS keys are
- *   surfaced back to the caller (`extraKeys`) instead of discarded.
- *
- * @param meta - The _meta object from a response
- * @param policy - Meta policy ('strict' or 'allow-extensions')
- * @returns Validation result; always valid. Under 'allow-extensions' any
- *   non-KYA-OS keys are surfaced in `extraKeys`.
- */
-export function validateMetaStructure(
-  meta: Record<string, unknown>,
-  policy: MetaPolicy = 'strict'
-): { valid: boolean; reason?: string; extraKeys?: string[] } {
-  const extraKeys = Object.keys(meta).filter(
-    k =>
-      k !== KYA_OS_PROOF_META_KEY &&
-      k !== LEGACY_NAMESPACED_PROOF_META_KEY &&
-      k !== LEGACY_PROOF_META_KEY,
-  );
-
-  // allow-extensions surfaces coexisting keys; strict discards them. Neither
-  // rejects — a reserved key (io.modelcontextprotocol/*, traceparent, …) or any
-  // other foreign key never fails verification.
-  if (policy === 'allow-extensions' && extraKeys.length > 0) {
-    return { valid: true, extraKeys };
-  }
-
-  return { valid: true };
-}
-
-/**
- * Extract proof from _meta with policy validation.
- *
- * @param meta - The _meta object from a response
- * @param policy - Meta policy ('strict' or 'allow-extensions')
- * @returns Extracted proof or error result
- */
-export function extractProofFromMeta(
-  meta: Record<string, unknown>,
-  policy: MetaPolicy = 'strict'
-): { success: true; proof: DetachedProof } | { success: false; reason: string; errorCode: string } {
-  // Check for the proof field first. Prefer the canonical role-named key,
-  // then the prior namespaced key, then the legacy bare key — the newest
-  // canonical form wins when several are present (SPEC §7.6).
-  const proof =
-    meta[KYA_OS_PROOF_META_KEY] ??
-    meta[LEGACY_NAMESPACED_PROOF_META_KEY] ??
-    meta[LEGACY_PROOF_META_KEY];
-  if (!proof) {
-    return {
-      success: false,
-      reason: '_meta does not contain a proof',
-      errorCode: PROOF_VERIFICATION_ERROR_CODES.MISSING_REQUIRED_FIELD,
-    };
-  }
-
-  // Run the policy check for its semantics (strict ignores / allow-extensions
-  // surfaces coexisting keys). Under MCP 2026-07-28 (SEP-414) it never rejects,
-  // so it cannot block extraction — there is no policy-violation path here.
-  validateMetaStructure(meta, policy);
-
-  const proofValidation = validateDetachedProof(proof);
-  if (!proofValidation.success) {
-    return {
-      success: false,
-      reason: proofValidation.error?.message ?? 'Invalid proof structure',
-      errorCode: PROOF_VERIFICATION_ERROR_CODES.INVALID_PROOF_STRUCTURE,
-    };
-  }
-
-  return { success: true, proof: proofValidation.data! };
 }

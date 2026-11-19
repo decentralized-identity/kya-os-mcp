@@ -1,5 +1,5 @@
 {
-  "version": "1.12.0",
+  "version": "1.13.0",
   "category": "status-list",
   "vectors": [
     {
@@ -19,14 +19,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-in-window-list",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -50,9 +50,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "bl5PeOYv1I5pQRHt7RgMme3PpbR3iBmiLL5qkIricT-Z65E8_OrqqKmuHWG6MIXz5MCPNcXgC121hbVj9XN5BQ"
+            "proofValue": "C72WzSbG2fMDoUtvkv38ljvVmvcA0-iXbmx25c4Rw70k7zIJsG-VQXN9feYARER_Kc0A1BalrzJRF4086IhuAw"
           }
         },
         "statusLists": {
@@ -65,7 +65,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2026-01-01T00:00:00.000Z",
             "validUntil": "2999-01-01T00:00:00.000Z",
             "credentialSubject": {
@@ -77,32 +77,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "KqrOq2uS82QcSR6Hj45DG40Nu3prwwABBqFHM04pCfXPko79CLceVCcnL_zni-hVEa7fQSGcrMhkdYYhRLfCBA"
+              "proofValue": "4v7wdpIXyjAtPfKWAMwje01ZqOJvUs54_LGt0g8iKlCzXxryKj0MCwkAFHEfNlzOtrZF0we_DUwOq4-_BbVSDw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -126,14 +126,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-in-window-list-2021",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -157,9 +157,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "tjGUM7kF_pHI8VFVWLUBTrQg7x8BZNNDS7ldE_kzU1EafVOggPqfRcp33IdGIYSqGlfoNauxvOHXwyvT_puICg"
+            "proofValue": "l7ZRwG5G6IXfeQWKav5unpTLjiSVwrQI2LNbjb7FK8aqHPnx_U07eP_lmZg6MZvuSkWZFh-39WuVWG0d2OVsBg"
           }
         },
         "statusLists": {
@@ -173,7 +173,7 @@
               "VerifiableCredential",
               "StatusList2021Credential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "issuanceDate": "2026-01-01T00:00:00.000Z",
             "expirationDate": "2999-01-01T00:00:00.000Z",
             "credentialSubject": {
@@ -185,32 +185,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "hup--lYOP46X7a0kgyiN9DJIuPFkvU5LL9BQkKjFgG24XUgm67iV5oR-24Q3XUHoBzfCbyRi5YT4vvfx1ojpDg"
+              "proofValue": "axFSLRM5hzHZY7p8ejU8nJrOPfq02uV1LV55Jb4zzbNyunBELXC7KIT7w5KwrhAqbDF-SkZ-LUSeu2QWjwU_CQ"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -234,14 +234,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-expired-list",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -265,9 +265,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "vdsUMk31XpqCwgIiqP0mkwvUgnh2X70wiYmvEyGqPEPuzjZooLPkPHuowxqWHnCMIfOWX9CXnLv5dIIesnwODQ"
+            "proofValue": "_zYpjIMMr1qVczapGulgjDhPzj4kWG6aC72mf3tW1MYYRGvisutlFB_6q4AWQKGRynaU5p0uE3NZXcBtnQufAw"
           }
         },
         "statusLists": {
@@ -280,7 +280,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2026-01-01T00:00:00.000Z",
             "validUntil": "2026-02-01T00:00:00.000Z",
             "credentialSubject": {
@@ -292,32 +292,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "Tj4phmQXxDt86stDDdxOLLEtll0y6YvJSs_2-cRkumTMbHnMo-bkMTz4olUmkqDzWmGQh1ifxVKFfNEpZMrrBg"
+              "proofValue": "odvVj4KdlJC6xCVjQ8MWy2hBSs2fCzkPUu4gTlju4NvKN7roAa5YxDxz0qAJWf7F8LPnJ9Dij5_jUn7ev_tCCw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -341,14 +341,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-expired-list-2021",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -372,9 +372,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "2SimEiXcVyp4txKI222iJ_XbNJ0zApwEpja_9-KyAluCjXqQ4ODHERZcx5ra65HpQpDhUmKmAuxWQO5SsJt8Cg"
+            "proofValue": "jddhELQyPvuMIhDEgIGX5gSHor5JddgvSeQ-v8s7dgos1WVUEBqAcGYgehhr5f3ez3sKiD1gKSaPPj90509RCQ"
           }
         },
         "statusLists": {
@@ -388,7 +388,7 @@
               "VerifiableCredential",
               "StatusList2021Credential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "issuanceDate": "2026-01-01T00:00:00.000Z",
             "expirationDate": "2026-02-01T00:00:00.000Z",
             "credentialSubject": {
@@ -400,32 +400,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "wA1aOgYUsrkDdUjVVoLcSxTpnXdSMrKQdqGO1oWFhpfvPvh16s0iVXkzxtMSs-flQgHglc30CkQXL6T9HKDEAw"
+              "proofValue": "Ee3gA-JrhYaqimKbJcbV9YWnT9JCLULWZ_O7sssB2BD8Chzv3F_RZMfRSgN6ZVg5np9CwuQbA92CEDW9auNhAA"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -449,14 +449,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-not-yet-valid-list",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -480,9 +480,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "dgw8tRGAQc33Vp8zp9mXIMjMJYHe1Xfon3a35F2HrEx3bMVN9giCooTlVPKQJIuZftbs22dIZCgnymLDM2NEDg"
+            "proofValue": "3j5smWAefGeQ0KB4euuncJyOX0rlGluJET7pC0PtFEhGIBcIkIMpBi9ssDxP6ZfLFYIbYGMIJA9RAFc6IHdcAw"
           }
         },
         "statusLists": {
@@ -495,7 +495,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2999-01-01T00:00:00.000Z",
             "credentialSubject": {
               "id": "https://status.example.com/validity/not-yet-valid-list#list",
@@ -506,32 +506,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "i_YCpna-mrjirkBNrDy14sTN9cxvOMiBAzTYv1E-UB7OGD8uaxJ-Op7TfZlWsy7yOb6elJc3nEsZL0c_8LGZDQ"
+              "proofValue": "GmQk7el1Y3ghMgYEuWnGWanKnN7M1H1YEaUAzBHwCQJ375tKh4X-3aoAfcqpVH9MJ8s6CbgUpz2QhP-EF414AA"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -555,14 +555,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-not-yet-valid-list-2021",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -586,9 +586,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "pxGIS_6QX61MVT-4dtI1e2yyc8B6aGU1BAGJdFlEsH_HhI0T8p0J4fylKe49o4ESv6J9QDmFBwOXJEnnBQNACA"
+            "proofValue": "fS-iqV9B8Pc8uVWgTOMOeo_1DugmhFLtlu3MJh4Cu2qd2vrpsIVdX6CPw8VYCaGEoOWppL3H83KqM97PhLl6AA"
           }
         },
         "statusLists": {
@@ -602,7 +602,7 @@
               "VerifiableCredential",
               "StatusList2021Credential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "issuanceDate": "2999-01-01T00:00:00.000Z",
             "credentialSubject": {
               "id": "https://status.example.com/validity/not-yet-valid-list-2021#list",
@@ -613,32 +613,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "Dara3-e_5SFOShE7o_jRUwiBpeiWs0qA8w9x-adNji0PlrnpJ97zfoqnpF7puLM-LkPjtjasrSqtvptmj_j9DA"
+              "proofValue": "7mdgy6MVIJBozo5_nxMk5xmDhAebZBW3jCGpBWa4YRv0kjM9QQMVKy6XOc4q_ZyuwTqSQWCQjo8DJl5ggDoHBQ"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -662,14 +662,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-undated-end-list",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -693,9 +693,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "AZEwcRrjG0aaZXDe-abalBAVN-a9jPtdKwlnt4c-QGcJKkN8PVS1NWd_gq6AbmCxywfo9J42ZZj8uYdU1579Bw"
+            "proofValue": "1Eg-uK_wacc57lkWUyrlFRgT765pKjJC4grJqMYUaH4k5EgkutPkyi9iU4m-13RySHwJf1BXGzeBX9a7UztRDA"
           }
         },
         "statusLists": {
@@ -708,7 +708,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2026-01-01T00:00:00.000Z",
             "validUntil": "not a date",
             "credentialSubject": {
@@ -720,32 +720,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "Sb6XS1gu-ILFAsTvZa_UjWNPVjVE9ODWx5oBYqOcCVV0PPrvx6uDMXnSsWKT0dg2rf2nubs98V1FIGWi7dBTCg"
+              "proofValue": "ciosS5dvdlkyeYdg5FZb-e-rkk3LD1qbSiY0tHicdScGgljZhzVzB9vCxsRkA0fan4QMjhoUxVHe_Qxla824Cw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -769,14 +769,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-current-member-decides",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -800,9 +800,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "uyRG5mr2GNB5beNAo9OP3w5uJqzCdIOQOdD_1-rdzSwAL-oRsUKaZb7xH8X9DiS75K_0yUVlX2_ue-p9uCIoBw"
+            "proofValue": "yXtiyR-q8VQEqWO5xBwg2nFtiu1EH-fqerSdnL_RIX9RYoGFwQtCRfgeUuOpa1ivNU7A5g4ejBczSZRnLT4pAw"
           }
         },
         "statusLists": {
@@ -815,7 +815,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2026-01-01T00:00:00.000Z",
             "validUntil": "2026-02-01T00:00:00.000Z",
             "expirationDate": "2999-01-01T00:00:00.000Z",
@@ -828,32 +828,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "TnGIBHLoPlbM_XA8oe7nz9k_xRiYdI40o-Z8CQjTO2Rj4wqfFeX3g6l4zLiKm1EwHlqC7lkCpj68nGPOOufFCQ"
+              "proofValue": "5HaoSYlstwYEc1iNs3uJrWz8eWLHVrpcMt8QBQtoP0uVM2X72m5RFqU6XeF46j9cr5nBqv7ulSm0NlZ5bivJDw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -877,14 +877,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-zoneless-start-list",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -908,9 +908,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "v4dfRbhN2c1jFAAYuPZb85tFjLI4KxO8aIczMjnqThY-9S279hB0lP8Zi6iW7vB9B-BwWCoTHzwR1SQy5FFnCw"
+            "proofValue": "GXcdQAxZwWIk-VW0ewRIqxnB7M1TpTpunJNPrSTwMHgjmGeI9O0ruWIv5510j3XoBPBtHCUV2NU0PTBIYKTEAg"
           }
         },
         "statusLists": {
@@ -923,7 +923,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2026-01-01T00:00:00",
             "validUntil": "2999-01-01T00:00:00.000Z",
             "credentialSubject": {
@@ -935,32 +935,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "4w0LC_DnSA019qhqvXoJTHdENhEnaIRHMtR1waBmyiZ7m_D2ZQj8nK__iX9Q1aSCnF8AVY0c_LLfIVMfBGkYBg"
+              "proofValue": "QYMB4NGCaL50GznIUTy4n-Rm-eEeC_RPglaYwJzMIAJD2TGtwS2HMMlnNr8Xnui2kK1H4PRf6tktUAsMku66Bw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -984,14 +984,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-zoneless-end-list-2021",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -1015,9 +1015,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "pCKWs9qcP9tEY0_UREEWupHAkUbVtaGDiH5-n1rbiZjdxDerlTU88nurT1mmmTJb8ZmsjiaFPBjk3YQJWAeIAQ"
+            "proofValue": "qku-zXZToIOemsVuvaaizsQW-i9yqtjbOZVJe6H7m4pElx5AlG7OTQ_5mCqY6XKqIGtjPdVZdOK4NTG33r6pAg"
           }
         },
         "statusLists": {
@@ -1031,7 +1031,7 @@
               "VerifiableCredential",
               "StatusList2021Credential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "issuanceDate": "2026-01-01T00:00:00.000Z",
             "expirationDate": "2999-01-01T00:00:00",
             "credentialSubject": {
@@ -1043,32 +1043,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "EXPzXwYScfAS9y1bnuYY7ne6oCQtn1oeLBWdqm3QEoReHd3K3UE6la2kKwR7EVDZHNfY-kHrUr8WntZOMtOFDw"
+              "proofValue": "uyWxVc7SYXwRoBHqa9pvGVNJ5fNPWccjGLsG4sNtKuwxyHLRLh7rfj5CiLOi4PhTMQR3pPSG0ay0T-k4FkThAA"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -1092,14 +1092,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-http-date-end-list",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -1123,9 +1123,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "a7ap32-r0bNwP7gPKcFDQLFv9ZBH7CH1MQY0dRz_PqqEyt5GJ3ch6fLH4ZdZDS0Ih1c4yfx_KbuHrqUqHZ-cBg"
+            "proofValue": "Xtn2aRHa0F1CEGNANolqHH2V1aBYWz8jdqW97AQe4YVG_GnUKoGdh34afiXgWDa6sXA0dxDD_xX5S1nQCYkZCg"
           }
         },
         "statusLists": {
@@ -1138,7 +1138,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2026-01-01T00:00:00.000Z",
             "validUntil": "Tue, 01 Jan 2999 00:00:00 GMT",
             "credentialSubject": {
@@ -1150,32 +1150,355 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "s25E9_-WQe40WPOU8WmH5Vqh2fQRecjk6B3CpPIcrJsp2v4AfbMrXTjY7KGlLXRY1Ci7w02KL9GwH4FCEJC6CA"
+              "proofValue": "TX8vAMlcu6BMlnPVA06ePuOLVCYKBcdQKVpGyF8LVu8Y1456nvNt7Vwdr2gFWsIvodRXkE6dkg9OEY5JTu84DQ"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/ttl-list",
+      "category": "status-list",
+      "description": "A clear list that states validFrom, validUntil and ttl, as the reference issuer writes a Bitstring Status List, is read: ttl says when to fetch the list again, and is no part of its window",
+      "reason": "A clear list that states validFrom, validUntil and ttl, as the reference issuer writes a Bitstring Status List, is read: ttl says when to fetch the list again, and is no part of its window",
+      "expected": "pass",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-ttl-list",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
+            "delegation": {
+              "id": "validity-ttl-list",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/ttl-list#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/ttl-list"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "Z34HGpOtGvaj4d0UilWQR3oLol8YcyZ1wn6IROcZscavPGgNe91toRbIsRaBAvlRaKgQnpdj0sJTQcTBtD0vAA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/ttl-list": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/ttl-list",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "validUntil": "2999-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/ttl-list#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA",
+              "ttl": 300000
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "CnOYA0TnC44-YcuK-hSmbUNWNuw2Ysh49__Np9onoot6_OAbt4jPnNO9rXcFRJ82GGOkymdpJRY_7do3RSJiDg"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
+            ],
+            "authentication": [
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/ttl-past-end-list",
+      "category": "status-list",
+      "description": "A clear list past its validUntil is refused though its ttl has not run out: ttl does not override or replace the validity period",
+      "reason": "A clear list past its validUntil is refused though its ttl has not run out: ttl does not override or replace the validity period",
+      "expected": "fail",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-ttl-past-end-list",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
+            "delegation": {
+              "id": "validity-ttl-past-end-list",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/ttl-past-end-list#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/ttl-past-end-list"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "h4fqHt7taI39DDxd5r7eWb52I1I1rGshFv9YSj_nxJEBQtJTv3aPulFolNH6ZkYrDGHE_nnxcVaDLi7HsThTBg"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/ttl-past-end-list": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/ttl-past-end-list",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "validUntil": "2026-02-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/ttl-past-end-list#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA",
+              "ttl": 3155760000000
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "UlxfRTYw68HcBOd-zFAN1rJ3mtrNY6psw32MfnjgBS77ZEyJ6GycesXI0u5sBDLPSgVGNQdmo1pOVcDz7NslCQ"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
+            ],
+            "authentication": [
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
+            ]
+          }
+        },
+        "serverDid": "did:web:server.example.com"
+      }
+    },
+    {
+      "id": "status-list/ttl-run-out-list",
+      "category": "status-list",
+      "description": "A clear list that states no validUntil is read though its ttl, counted from its validFrom, ran out long ago: ttl is no end",
+      "reason": "A clear list that states no validUntil is read though its ttl, counted from its validFrom, ran out long ago: ttl is no end",
+      "expected": "pass",
+      "input": {
+        "credential": {
+          "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+          ],
+          "id": "urn:uuid:validity-ttl-run-out-list",
+          "type": [
+            "VerifiableCredential",
+            "DelegationCredential"
+          ],
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+          "issuanceDate": "2026-01-01T00:00:00.000Z",
+          "credentialSubject": {
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
+            "delegation": {
+              "id": "validity-ttl-run-out-list",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
+              "scopes": [
+                "greeting:read"
+              ],
+              "constraints": {
+                "scopes": [
+                  "greeting:read"
+                ],
+                "audience": "did:web:server.example.com"
+              },
+              "status": "active",
+              "createdAt": 1750000000000
+            }
+          },
+          "credentialStatus": {
+            "id": "https://status.example.com/validity/ttl-run-out-list#7",
+            "type": "BitstringStatusListEntry",
+            "statusPurpose": "revocation",
+            "statusListIndex": "7",
+            "statusListCredential": "https://status.example.com/validity/ttl-run-out-list"
+          },
+          "proof": {
+            "type": "Ed25519Signature2020",
+            "created": "2026-01-01T00:00:00.000Z",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "proofPurpose": "assertionMethod",
+            "proofValue": "L879mqLaRRG1sd2SEJ6CLobg4pASIQmkO5hB66LKf3O0bOJf7zCtfOajl3vZhPOfZImo2wNMMbohNicK8MwpCA"
+          }
+        },
+        "statusLists": {
+          "https://status.example.com/validity/ttl-run-out-list": {
+            "@context": [
+              "https://www.w3.org/ns/credentials/v2"
+            ],
+            "id": "https://status.example.com/validity/ttl-run-out-list",
+            "type": [
+              "VerifiableCredential",
+              "BitstringStatusListCredential"
+            ],
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "validFrom": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "https://status.example.com/validity/ttl-run-out-list#list",
+              "type": "BitstringStatusList",
+              "statusPurpose": "revocation",
+              "encodedList": "uH4sIAAAAAAAAE-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA",
+              "ttl": 1
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "uFegwLEIMHkE9A4HF6IuTVhgblvFepDv1YgOp4QRhY-oyI3FKqxTxHcwhRUGgtmUD19OZDVSHvwa6gfS_xLIAw"
+            }
+          }
+        },
+        "didDocuments": {
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+            "verificationMethod": [
+              {
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+                "type": "Ed25519VerificationKey2020",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+                "publicKeyJwk": {
+                  "kty": "OKP",
+                  "crv": "Ed25519",
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
+                }
+              }
+            ],
+            "assertionMethod": [
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
+            ],
+            "authentication": [
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },
@@ -1199,14 +1522,14 @@
             "VerifiableCredential",
             "DelegationCredential"
           ],
-          "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
           "issuanceDate": "2026-01-01T00:00:00.000Z",
           "credentialSubject": {
-            "id": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+            "id": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
             "delegation": {
               "id": "validity-offset-window-list",
-              "issuerDid": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
-              "subjectDid": "did:key:z6MkuystdxSJ2dJCfQ79ncaWD12jFVJfwUZS5bzRVJavDKiB",
+              "issuerDid": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
+              "subjectDid": "did:key:z6MkoiN3sfDcZJrrFLbXmx1gzCegioGG8AYUsntqFshdVKoB",
               "scopes": [
                 "greeting:read"
               ],
@@ -1230,9 +1553,9 @@
           "proof": {
             "type": "Ed25519Signature2020",
             "created": "2026-01-01T00:00:00.000Z",
-            "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "proofPurpose": "assertionMethod",
-            "proofValue": "JoU1b-8dBCPaKR10lKv_UsFvlpRs6qW-qsVTdyk1TYOJl-iH256CztH3cLwO-hoJn06yk3qgyqAZF-o7czJoDA"
+            "proofValue": "XyS5K9GakZK3-2oJ0agIJugwsPvrotR5yi1LMVJ8yKo3t-7Mzv1JO9goPcjn7i-eS81RReUsIuhlGdNFgh2fBw"
           }
         },
         "statusLists": {
@@ -1245,7 +1568,7 @@
               "VerifiableCredential",
               "BitstringStatusListCredential"
             ],
-            "issuer": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+            "issuer": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "validFrom": "2026-01-01T05:30:00.123456789+05:30",
             "validUntil": "2998-12-31T18:00:00-06:00",
             "credentialSubject": {
@@ -1257,32 +1580,32 @@
             "proof": {
               "type": "Ed25519Signature2020",
               "created": "2026-01-01T00:00:00.000Z",
-              "verificationMethod": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+              "verificationMethod": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
               "proofPurpose": "assertionMethod",
-              "proofValue": "Sp5uLjwseMP78hO_-kByOI6mmk9TTeUUKxa3Y_S2HtU9hyn3AFIGz5iAWqyLVicoa405Dt6YiFlClaHT4S6cCg"
+              "proofValue": "7CCGFufPWSJRoOlBQXvDWii0S2Ayoo02zo3HFI6_PPMY5esxEIlWVrx5S4e8T4rl8mbBcsmxzQPMTYbL7PScBw"
             }
           }
         },
         "didDocuments": {
-          "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB": {
-            "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+          "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV": {
+            "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
             "verificationMethod": [
               {
-                "id": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "id": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "type": "Ed25519VerificationKey2020",
-                "controller": "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB",
+                "controller": "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV",
                 "publicKeyJwk": {
                   "kty": "OKP",
                   "crv": "Ed25519",
-                  "x": "KRjreI3drdDCfEQ_ZyIfbV5XbRbGoycu_4S8TIZ1p8A"
+                  "x": "0tboED3BuAZFpF55UhSyfT6rsrv8H2xX3z3V1Sz1HO4"
                 }
               }
             ],
             "assertionMethod": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ],
             "authentication": [
-              "did:key:z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB#z6MkhDgoNSKLMH6jbGavQ83TNayT2mrBeKhDE2BToy6V4jxB"
+              "did:key:z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV#z6MkteHj5t5YfJoamgJeG8BDVoBKJPckUbFkyrfeFvfLaxkV"
             ]
           }
         },

@@ -9,7 +9,7 @@
  *   a verifier derives authorization from; sent when the caller passes `credentialJwt`
  * - KYA-OS-Agent-DID: the original agent's DID
  * - KYA-OS-Delegation-Chain: the delegation chain ID (vcId of the root delegation), advisory only
- * - KYA-OS-Session-Id: the current session ID
+ * - KYA-OS-Session-Id: an anchor of the current session for the target's host, never the session's id
  * - KYA-OS-Delegation-Proof: a signed JWT proving the delegation is being forwarded
  *
  * Related Spec: KYA-OS §8, Outbound Delegation Propagation
@@ -19,9 +19,13 @@ import type { SessionContext, DelegationRecord } from '../types/protocol.js';
 import { buildDelegationProofJWT, type Ed25519PrivateJWK } from './outbound-proof.js';
 import { extractPublicKeyFromDidKey, isEd25519DidKey } from './did-key-resolver.js';
 import { parseVCJWT } from './utils.js';
+import { verifyDelegationAudience } from './audience-validator.js';
+import { describeValue } from '../utils/describe-value.js';
 import { base64ToBytes, base64urlEncodeFromBytes } from '../utils/base64.js';
 import { strictBase64urlBytes } from '../utils/base64-reading.js';
 import { isRecord } from '../utils/guards.js';
+import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
+import { domainDigest, webCryptoSha256 } from '../utils/domain-digest.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import { logger } from '../logging/index.js';
 
@@ -68,6 +72,10 @@ export interface OutboundDelegationContext {
 export interface OutboundDelegationHeaders {
   'KYA-OS-Agent-DID': string;
   'KYA-OS-Delegation-Chain': string;
+  /**
+   * An anchor of the session for the target's host, `sha256:` and 64 lowercase hex digits: one value
+   * for every call of the session to that host, and never the session's id (SPEC §8.1).
+   */
   'KYA-OS-Session-Id': string;
   'KYA-OS-Delegation-Proof': string;
   /** The delegation credential as a VC-JWT (SPEC §8.1); present only when `credentialJwt` was given. */
@@ -115,6 +123,49 @@ function credentialHeader(credentialJwt: unknown): Pick<OutboundDelegationHeader
   }
   if (!isCompactVcJwt(credentialJwt)) throw new TypeError(NOT_A_VC_JWT);
   return { [OUTBOUND_HEADER_NAMES.DELEGATION_CREDENTIAL]: credentialJwt };
+}
+
+/** Whether `bound`, a bound in epoch seconds, is one: a finite number. */
+const isEpochSeconds = (bound: unknown): bound is number => typeof bound === 'number' && Number.isFinite(bound);
+
+/**
+ * Why the server must not forward `delegation` now, or `undefined` when it may. The proof the
+ * helper signs tells the target that this server is propagating the delegation, and the target may
+ * act on that alone, so the server signs it only for a record that is in force: active, inside its
+ * `notBefore` and `notAfter`, held exactly as the gate holds a credential's and with a bound that is
+ * no number read as passed, and addressed to this server, as the gate requires of what it accepts.
+ */
+function forwardingRefusal(delegation: DelegationRecord, serverDid: string): string | undefined {
+  if (delegation.status !== 'active') {
+    return `Delegation must be active for outbound delegation (its status is ${describeValue(delegation.status)})`;
+  }
+  const { notBefore, notAfter } = delegation.constraints;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (notAfter !== undefined && !(isEpochSeconds(notAfter) && nowSec <= notAfter)) {
+    return 'Delegation must not be past its notAfter for outbound delegation';
+  }
+  if (notBefore !== undefined && !(isEpochSeconds(notBefore) && nowSec >= notBefore)) {
+    return 'Delegation must not be before its notBefore for outbound delegation';
+  }
+  if (!verifyDelegationAudience(delegation, serverDid)) {
+    return 'Delegation audience must admit the forwarding server for outbound delegation';
+  }
+  return undefined;
+}
+
+/** Domain of a session anchor: `SHA-256(UTF8(domain) || 0x00 || JCS([sessionId, target host]))`. */
+const SESSION_ANCHOR_DOMAIN = 'org.kya-os.outbound.session-anchor.v1';
+
+/**
+ * The `KYA-OS-Session-Id` a target is sent: an anchor of the session for the target's host, the
+ * host the proof is addressed to. It is one value for every call of one session to one host, so the
+ * target can tell which of its calls one session made, and it is never the session's id. The gate
+ * resolves a grant it bound in a session by the session's id alone (`GrantStore.getBySession`), so
+ * the id is a bearer of the session: sent as it is, every downstream service, and whatever logs or
+ * proxies its headers, could call the server's gate in that session as the agent.
+ */
+function sessionAnchor(sessionId: string, targetHostname: string): Promise<string> {
+  return domainDigest(SESSION_ANCHOR_DOMAIN, canonicalizeJsonBytes([sessionId, targetHostname]), webCryptoSha256);
 }
 
 /**
@@ -177,6 +228,8 @@ function buildPrivateKeyJwk(
  *
  * @throws {Error} If session is missing agentDid or sessionId
  * @throws {Error} If delegation is missing vcId
+ * @throws {Error} If delegation is not active, is before its notBefore or past its notAfter, or
+ *   names an audience that does not admit serverIdentity.did
  * @throws {TypeError} If credentialJwt is given and is not a compact VC-JWT
  * @throws {Error} If serverIdentity.did is not a valid Ed25519 did:key
  *
@@ -212,6 +265,11 @@ export async function buildOutboundDelegationHeaders(
     throw new Error('Delegation must have vcId for outbound delegation');
   }
 
+  const refusal = forwardingRefusal(delegation, serverIdentity.did);
+  if (refusal !== undefined) {
+    throw new Error(refusal);
+  }
+
   const credential = credentialHeader(credentialJwt);
 
   // Extract hostname for JWT audience
@@ -240,17 +298,19 @@ export async function buildOutboundDelegationHeaders(
     targetHostname,
   });
 
+  const anchor = await sessionAnchor(session.sessionId, targetHostname);
+
   logger.debug('Built outbound delegation headers', {
     agentDid: session.agentDid,
     delegationChain: delegation.vcId,
-    sessionId: session.sessionId,
+    sessionAnchor: anchor,
     targetHostname,
   });
 
   return {
     'KYA-OS-Agent-DID': session.agentDid,
     'KYA-OS-Delegation-Chain': delegation.vcId,
-    'KYA-OS-Session-Id': session.sessionId,
+    'KYA-OS-Session-Id': anchor,
     'KYA-OS-Delegation-Proof': jwt,
     ...credential,
   };

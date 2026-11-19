@@ -46,9 +46,11 @@ export interface EvaluatedCredentials {
   /**
    * The credentials the walk reached, root first, each as the walk read it
    * (see `snapshotAncestor`). On a chain that validated that is the whole
-   * chain, the presented credential last. On a refusal it ends with the
-   * credential the walk stopped at, so a caller can record what was examined
-   * and nothing that was not. Absent when the walk never started: the leaf
+   * chain, the presented credential last. On a refusal it is the ancestors
+   * the walk reached, up to the one it stopped at, then the presented
+   * credential, which the walk examines before any ancestor, so a caller can
+   * record what was examined and nothing that was not: a presented
+   * credential refused on its own is the only one. Absent when the walk never started: the leaf
    * was malformed, its chain could not be assembled (a value the resolver
    * returned could not be copied, or what it returned is not a chain of
    * delegation credentials), it was longer than `maxChainLength`, or its

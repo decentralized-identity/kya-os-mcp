@@ -7,6 +7,8 @@
  */
 
 import { expect } from 'vitest';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
+import { unreadStatusList, WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
 import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
 import {
@@ -141,9 +143,12 @@ export async function expectAccepted(
 }
 
 /**
- * That every path refuses the chain at hop `hopIndex`, and, when `because` is given, that each
- * refusal ends with it: the reason the checker gave for the hop, followed by nothing or by the
- * remedy a keeper refusal ends with, which `status-list-signer-hint.test.ts` pins.
+ * That every path refuses the chain at hop `hopIndex`, and, when `because` is given, the keeper
+ * rule's refusal of the list the hop names: the operator's log tells, for each path, `because`
+ * followed by nothing or by the remedy a keeper refusal ends with, which
+ * `status-list-signer-hint.test.ts` pins, and each refusal tells whoever presented the chain only
+ * that the list could not be read or checked, since the rule quotes the list before its proof is
+ * checked.
  */
 export async function expectRevokedAt(
   hopIndex: number,
@@ -152,21 +157,28 @@ export async function expectRevokedAt(
   verifier?: Verifier,
   because?: string,
 ) {
-  const { evaluated, request, guarded } = await verdicts(chain, lists, verifier);
+  const { result, logged } = await withWarnings(() => verdicts(chain, lists, verifier));
+  const { evaluated, request, guarded } = result;
   const reasons = [expect.stringMatching(new RegExp(`^revocation: hop ${hopIndex} `))];
   expect(evaluated.ok).toBe(false);
   expect(evaluated.reasons).toEqual(reasons);
   expect(request).toMatchObject({ ok: false, code: 'delegation_revoked', reasons });
   expect(guarded).toMatchObject({ ok: false, status: 403, error: { code: 'delegation_revoked', reasons } });
   if (because !== undefined) {
+    const url = chain[hopIndex]?.credentialStatus?.statusListCredential;
     const refused = [evaluated.reasons, request.ok ? [] : request.reasons, guarded.ok ? [] : guarded.error.reasons];
-    for (const [reason] of refused) {
-      const said = `, subtree invalidated: ${because}`;
-      const rest = reason?.includes(said) ? reason.slice(reason.indexOf(said) + said.length) : undefined;
-      expect(rest === '' || rest?.startsWith('; if '), reason).toBe(true);
+    for (const [reason] of refused) expect(reason).toMatch(new RegExp(`, subtree invalidated: ${escaped(unreadStatusList(url) + WITHHELD_SUFFIX)}$`));
+    const told = logged.split('\n').filter((line) => line.includes(`revocation: ${because}`));
+    expect(told, logged).toHaveLength(refused.length);
+    for (const line of told) {
+      const rest = line.slice(line.indexOf(because) + because.length);
+      expect(rest === '' || rest.startsWith('; if '), line).toBe(true);
     }
   }
 }
+
+/** `text` as a regular expression that matches it as written. */
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** A list `signer` signed that states `url` as its `id`, with the `revoked` bits set. */
 export function listAt(signer: TestIdentity, url: string, revoked: number[] = []): Record<string, unknown> {

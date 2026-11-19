@@ -1,12 +1,21 @@
-import { canonicalizeJson, canonicalizeJsonBytes } from '../utils/canonical-json.js';
-import { hashAuditValue, type AuditHasher, type AuditSignatureVerifier } from './crypto.js';
+import { canonicalizeJsonBytes } from '../utils/canonical-json.js';
 import {
-  AUDIT_DIGEST_DOMAINS,
-  buildAuditRecorderReceiptCore,
-  digestAuditEntry,
-  digestAuditEvidenceManifest,
-  digestAuditEvent,
-} from './integrity.js';
+  checkChainPosition,
+  checkCheckpoint,
+  checkEntry,
+  type CheckpointCheck,
+} from './artifact-checks.js';
+import { hashAuditValue } from './crypto.js';
+import { AUDIT_DIGEST_DOMAINS } from './integrity.js';
+import { carriedEvidence, gatherDating, type Dating } from './key-dating-evidence.js';
+import {
+  keyIsCurrent,
+  keyIsLive,
+  keyTrust,
+  withBoundary,
+  type CheckpointBoundaries,
+  type CheckpointBoundary,
+} from './key-trust.js';
 import { Rfc9162MerkleTree } from './merkle.js';
 import {
   auditObservationReceiptSchema,
@@ -15,289 +24,56 @@ import {
   signedAuditEntrySchema,
 } from './schemas.js';
 import type {
-  AuditCheckpointCoreV1,
   AuditLedgerRef,
   AuditVerificationDimension,
   AuditObservationReceiptV1,
   AuditVerificationPolicyV1,
   AuditVerificationReportV1,
-  Digest,
   HistoricalAuditKeyPolicy,
   SignedAuditCheckpointV1,
   SignedAuditEntryV1,
   SignerRef,
 } from './types.js';
+import {
+  AUDIT_REASON_CODES,
+  applyRequiredAuditProfile,
+  dimension,
+  invalidPolicyReport,
+  mergeAuditDimensions,
+  verdictOf,
+} from './verdicts.js';
+import type {
+  AuditArtifactVerifierOptions,
+  AuditSignedArtifacts,
+  AuditVerificationContext,
+} from './verifier-types.js';
 
-export const AUDIT_REASON_CODES = Object.freeze({
-  NOT_EVALUATED: 'AUDIT_NOT_EVALUATED',
-  SCHEMA_INVALID: 'AUDIT_SCHEMA_INVALID',
-  UNSUPPORTED_SUITE: 'AUDIT_UNSUPPORTED_SUITE',
-  UNSUPPORTED_ALGORITHM: 'AUDIT_UNSUPPORTED_ALGORITHM',
-  UNTRUSTED_RECORDER: 'AUDIT_UNTRUSTED_RECORDER',
-  KEY_BOUNDARY_UNRESOLVED: 'AUDIT_KEY_BOUNDARY_UNRESOLVED',
-  KEY_NOT_CURRENT: 'AUDIT_KEY_NOT_CURRENT',
-  SIGNATURE_INVALID: 'AUDIT_SIGNATURE_INVALID',
-  EVENT_DIGEST_MISMATCH: 'AUDIT_EVENT_DIGEST_MISMATCH',
-  EVIDENCE_MANIFEST_DIGEST_MISMATCH: 'AUDIT_EVIDENCE_MANIFEST_DIGEST_MISMATCH',
-  ENTRY_DIGEST_MISMATCH: 'AUDIT_ENTRY_DIGEST_MISMATCH',
-  RECEIPT_MISMATCH: 'AUDIT_RECEIPT_MISMATCH',
-  LEDGER_SCOPE_MISMATCH: 'AUDIT_LEDGER_SCOPE_MISMATCH',
-  SEQUENCE_GAP: 'AUDIT_SEQUENCE_GAP',
-  PREDECESSOR_MISMATCH: 'AUDIT_PREDECESSOR_MISMATCH',
-  GENESIS_INVALID: 'AUDIT_GENESIS_INVALID',
-  CHECKPOINT_MISSING: 'AUDIT_CHECKPOINT_MISSING',
-  CHECKPOINT_DIGEST_MISMATCH: 'AUDIT_CHECKPOINT_DIGEST_MISMATCH',
-  CHECKPOINT_SIGNATURE_INVALID: 'AUDIT_CHECKPOINT_SIGNATURE_INVALID',
-  CHECKPOINT_ROOT_MISMATCH: 'AUDIT_CHECKPOINT_ROOT_MISMATCH',
-  CHECKPOINT_RANGE_MISMATCH: 'AUDIT_CHECKPOINT_RANGE_MISMATCH',
-  CHECKPOINT_CHAIN_MISMATCH: 'AUDIT_CHECKPOINT_CHAIN_MISMATCH',
-  CHECKPOINT_FORK_DETECTED: 'AUDIT_CHECKPOINT_FORK_DETECTED',
-  MERKLE_PROOF_INVALID: 'AUDIT_MERKLE_PROOF_INVALID',
-  MERKLE_PROOF_MISSING: 'AUDIT_MERKLE_PROOF_MISSING',
-  OBSERVER_EVIDENCE_MISSING: 'AUDIT_OBSERVER_EVIDENCE_MISSING',
-  OBSERVATION_DIGEST_MISMATCH: 'AUDIT_OBSERVATION_DIGEST_MISMATCH',
-  OBSERVATION_SIGNATURE_INVALID: 'AUDIT_OBSERVATION_SIGNATURE_INVALID',
-  OBSERVATION_SCOPE_MISMATCH: 'AUDIT_OBSERVATION_SCOPE_MISMATCH',
-  UNTRUSTED_OBSERVER: 'AUDIT_UNTRUSTED_OBSERVER',
-  OBSERVATION_STALE: 'AUDIT_OBSERVATION_STALE',
-  OBSERVATION_FUTURE_DATED: 'AUDIT_OBSERVATION_FUTURE_DATED',
-  OBSERVATION_CHAIN_MISMATCH: 'AUDIT_OBSERVATION_CHAIN_MISMATCH',
-  UNTRUSTED_SUPPORTING_ANCHOR: 'AUDIT_UNTRUSTED_SUPPORTING_ANCHOR',
-  SUPPORTING_ANCHOR_INVALID: 'AUDIT_SUPPORTING_ANCHOR_INVALID',
-  AUTHORIZATION_EVIDENCE_MISSING: 'AUDIT_AUTHORIZATION_EVIDENCE_MISSING',
-  AUTHORIZATION_COLLATERAL_NOT_VERIFIED: 'AUDIT_AUTHORIZATION_COLLATERAL_NOT_VERIFIED',
-  CURRENT_AUTHORIZATION_NOT_EVALUATED: 'AUDIT_CURRENT_AUTHORIZATION_NOT_EVALUATED',
-  BUNDLE_SCHEMA_INVALID: 'AUDIT_BUNDLE_SCHEMA_INVALID',
-  BUNDLE_MANIFEST_DIGEST_MISMATCH: 'AUDIT_BUNDLE_MANIFEST_DIGEST_MISMATCH',
-  BUNDLE_SIGNATURE_INVALID: 'AUDIT_BUNDLE_SIGNATURE_INVALID',
-  BUNDLE_EXPORTER_UNAUTHORIZED: 'AUDIT_BUNDLE_EXPORTER_UNAUTHORIZED',
-  BUNDLE_INVENTORY_MISMATCH: 'AUDIT_BUNDLE_INVENTORY_MISMATCH',
-  BUNDLE_COMPONENT_DIGEST_MISMATCH: 'AUDIT_BUNDLE_COMPONENT_DIGEST_MISMATCH',
-  BUNDLE_SELECTION_INCOMPLETE: 'AUDIT_BUNDLE_SELECTION_INCOMPLETE',
-  VERIFICATION_POLICY_MISMATCH: 'AUDIT_VERIFICATION_POLICY_MISMATCH',
-  VERIFICATION_POLICY_INVALID: 'AUDIT_VERIFICATION_POLICY_INVALID',
-  REQUIRED_PROFILE_UNMET: 'AUDIT_REQUIRED_PROFILE_UNMET',
-  EXPLICITLY_REDACTED: 'AUDIT_EXPLICITLY_REDACTED',
-  EXPLICITLY_DISPOSED: 'AUDIT_EXPLICITLY_DISPOSED',
-  EXPLICITLY_UNAVAILABLE: 'AUDIT_EXPLICITLY_UNAVAILABLE',
-} as const);
-
-/** Reasons that mean "not decidable from the supplied collateral", never "wrong". */
-const INDETERMINATE_REASONS: ReadonlySet<string> = new Set([
-  AUDIT_REASON_CODES.NOT_EVALUATED,
-  AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED,
-]);
+export { AUDIT_REASON_CODES, applyRequiredAuditProfile, mergeAuditDimensions } from './verdicts.js';
+export type {
+  AuditArtifactVerifierOptions,
+  AuditAuthorizationVerifier,
+  AuditSignedArtifacts,
+  AuditVerificationContext,
+} from './verifier-types.js';
 
 /** Matches the proof verifier's default timestamp tolerance. */
 const DEFAULT_MAX_CLOCK_SKEW_MS = 120_000;
 
-/** Dimensions each audit assurance profile requires to be `valid`, in level order. */
-const PROFILE_DIMENSIONS = [
-  'cryptographicIntegrity',
-  'chainIntegrity',
-  'checkpointIntegrity',
-  'anchorIntegrity',
-] as const;
-
-function dimension(
-  verdict: AuditVerificationDimension['verdict'],
-  reasonCodes: Iterable<string> = [],
-): AuditVerificationDimension {
-  return { verdict, reasonCodes: [...new Set(reasonCodes)].sort() };
+/** Whether evidence dates an artifact at `at` no later than its key's end. */
+function dated(at: number | undefined, until: number): boolean {
+  return at !== undefined && at <= until;
 }
-
-function verdictOf(reasons: ReadonlySet<string>): AuditVerificationDimension['verdict'] {
-  if (reasons.size === 0) return 'valid';
-  return [...reasons].every((reason) => INDETERMINATE_REASONS.has(reason))
-    ? 'indeterminate'
-    : 'invalid';
-}
-
-function sameSigner(left: SignerRef, right: SignerRef): boolean {
-  return left.did === right.did && left.kid === right.kid && left.alg === right.alg;
-}
-
-function keyIsValidAt(policy: HistoricalAuditKeyPolicy, at: number): boolean {
-  return (policy.validFrom === undefined || at >= policy.validFrom) &&
-    (policy.validUntil === undefined || at <= policy.validUntil);
-}
-
-interface CheckpointBounds {
-  validFromCheckpoint?: Digest;
-  validUntilCheckpoint?: Digest;
-}
-
-interface CheckpointBoundary extends AuditLedgerRef {
-  treeSize: bigint;
-}
-
-type CheckpointBoundaries = ReadonlyMap<string, CheckpointBoundary>;
-
-type BoundStatus = 'within' | 'unresolved' | 'outside';
-
-/**
- * Checkpoint bounds place an artifact by the tree size it first appears in:
- * `sequence + 1` for an entry, `treeSize` for a checkpoint or an observation.
- * A key valid until checkpoint C covers positions up to C's tree size; a key
- * valid from C covers positions after it. A boundary that is missing, or
- * belongs to another ledger epoch, cannot place the artifact.
- */
-function positionWithin(
-  bounds: CheckpointBounds,
-  ledger: AuditLedgerRef,
-  position: bigint,
-  boundaries: CheckpointBoundaries,
-): BoundStatus {
-  const resolve = (digest: Digest | undefined): bigint | null | undefined => {
-    if (digest === undefined) return undefined;
-    const boundary = boundaries.get(digest);
-    return boundary?.ledgerId === ledger.ledgerId &&
-      boundary.ledgerEpochId === ledger.ledgerEpochId
-      ? boundary.treeSize
-      : null;
-  };
-  const from = resolve(bounds.validFromCheckpoint);
-  const until = resolve(bounds.validUntilCheckpoint);
-  if ((typeof from === 'bigint' && position <= from) ||
-    (typeof until === 'bigint' && position > until)) return 'outside';
-  return from === null || until === null ? 'unresolved' : 'within';
-}
-
-function strictest(...values: BoundStatus[]): BoundStatus {
-  if (values.includes('outside')) return 'outside';
-  return values.includes('unresolved') ? 'unresolved' : 'within';
-}
-
-function keyTrust(
-  keys: readonly HistoricalAuditKeyPolicy[],
-  signer: SignerRef,
-  at: number,
-  ledger: AuditLedgerRef,
-  position: bigint,
-  boundaries: CheckpointBoundaries,
-  epochBounds: CheckpointBounds = {},
-): BoundStatus {
-  const epoch = positionWithin(epochBounds, ledger, position, boundaries);
-  let best: BoundStatus = 'outside';
-  for (const key of keys) {
-    if (!sameSigner(key.signer, signer) || !keyIsValidAt(key, at)) continue;
-    const status = strictest(epoch, positionWithin(key, ledger, position, boundaries));
-    if (status === 'within') return status;
-    if (status === 'unresolved') best = status;
-  }
-  return best;
-}
-
-/**
- * Whether the policy still lists the signer as valid at `now`. A checkpoint
- * bound names a checkpoint that already exists, so a key valid only until one
- * has been retired, while one valid from one has already started.
- */
-function keyIsCurrent(
-  keys: readonly HistoricalAuditKeyPolicy[],
-  signer: SignerRef,
-  now: number,
-): boolean {
-  return keys.some((key) => sameSigner(key.signer, signer) && keyIsValidAt(key, now) &&
-    key.validUntilCheckpoint === undefined);
-}
-
-function exactJson(left: unknown, right: unknown): boolean {
-  try {
-    return canonicalizeJson(left) === canonicalizeJson(right);
-  } catch {
-    return false;
-  }
-}
-
-function invalidPolicyReport(policy: unknown): AuditVerificationReportV1 {
-  const policyId = typeof policy === 'object' && policy !== null &&
-    typeof (policy as { policyId?: unknown }).policyId === 'string'
-    ? (policy as { policyId: string }).policyId
-    : 'invalid-policy';
-  const invalid = dimension('invalid', [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID]);
-  return {
-    schema: 'https://schema.kya-os.org/v1/protocol/audit/verification-report/v1.0.0',
-    policyId,
-    cryptographicIntegrity: invalid,
-    chainIntegrity: invalid,
-    checkpointIntegrity: invalid,
-    anchorIntegrity: invalid,
-    scopeEvidenceCompleteness: invalid,
-    authorizedAsObserved: dimension('indeterminate', [AUDIT_REASON_CODES.NOT_EVALUATED]),
-    currentAuthorization: dimension('indeterminate', [AUDIT_REASON_CODES.NOT_EVALUATED]),
-  };
-}
-
-/**
- * Marks every dimension the policy's `requiredAuditProfile` depends on as
- * invalid unless it is `valid`: AAP-1 needs cryptographic integrity, AAP-2
- * adds chain integrity, AAP-3 adds checkpoint integrity, and AAP-4 adds
- * observation integrity backed by a supporting anchor receipt.
- */
-export function applyRequiredAuditProfile(
-  report: AuditVerificationReportV1,
-  policy: AuditVerificationPolicyV1,
-  evidence: { supportingAnchors: boolean } = { supportingAnchors: false },
-): AuditVerificationReportV1 {
-  if (policy.requiredAuditProfile === undefined) return report;
-  const level = Number(policy.requiredAuditProfile.slice(-1));
-  const result = { ...report };
-  for (const name of PROFILE_DIMENSIONS.slice(0, level)) {
-    const unmet = report[name].verdict !== 'valid' ||
-      (name === 'anchorIntegrity' && !evidence.supportingAnchors);
-    if (unmet) {
-      result[name] = dimension('invalid', [
-        ...report[name].reasonCodes,
-        AUDIT_REASON_CODES.REQUIRED_PROFILE_UNMET,
-      ]);
-    }
-  }
-  return result;
-}
-
-export interface AuditArtifactVerifierOptions {
-  hasher: AuditHasher;
-  signatures: AuditSignatureVerifier;
-  verifiedAt?: () => number;
-  /** How far an observation may be dated ahead of `verifiedAt` (default 120 s). */
-  maxClockSkewMs?: number;
-  authorization?: AuditAuthorizationVerifier;
-}
-
-/** Supporting artifacts that let a verifier resolve checkpoint-bounded key validity. */
-export interface AuditVerificationContext {
-  /** Checkpoints that policy `validFromCheckpoint`/`validUntilCheckpoint` digests may name. */
-  checkpoints?: readonly SignedAuditCheckpointV1[];
-}
-
-/** Artifacts whose signing keys a verification relied on. */
-export interface AuditSignedArtifacts {
-  entries?: readonly SignedAuditEntryV1[];
-  checkpoints?: readonly SignedAuditCheckpointV1[];
-  observations?: readonly AuditObservationReceiptV1[];
-  /** The exporter that signed a replay-bundle manifest. */
-  exporter?: SignerRef;
-}
-
-/** Optional collateral verifier kept separate from structural/cryptographic verification. */
-export interface AuditAuthorizationVerifier {
-  verifyAsObserved(
-    entries: readonly SignedAuditEntryV1[],
-    policy: AuditVerificationPolicyV1,
-  ): Promise<AuditVerificationDimension>;
-  verifyCurrent(
-    entries: readonly SignedAuditEntryV1[],
-    policy: AuditVerificationPolicyV1,
-  ): Promise<AuditVerificationDimension>;
-}
-
-type CheckpointCheck =
-  | { kind: 'rejected'; result: AuditVerificationDimension }
-  | { kind: 'checked'; core: AuditCheckpointCoreV1; reasons: Set<string> };
 
 /** Pure historical verifier. It never reads live nonce state or applies current freshness. */
 export class AuditArtifactVerifier {
+  /** Boundary indexes of the frozen checkpoint lists this verifier was given, built once each. */
+  private readonly indexed = new WeakMap<readonly unknown[], Promise<CheckpointBoundaries>>();
+  /** The dating of each replay bundle's evidence, built once per bundle and policy. */
+  private readonly dated = new WeakMap<
+    AuditVerificationContext,
+    { policy: AuditVerificationPolicyV1; dating: Promise<Dating> }
+  >();
+
   constructor(private readonly options: AuditArtifactVerifierOptions) {}
 
   async verifyEntries(
@@ -318,6 +94,7 @@ export class AuditArtifactVerifier {
       chainReasons.add(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE);
     }
 
+    const ended: { entry: SignedAuditEntryV1; until: number }[] = [];
     for (const candidate of entries) {
       const parsed = signedAuditEntrySchema.safeParse(candidate);
       if (!parsed.success) {
@@ -327,9 +104,22 @@ export class AuditArtifactVerifier {
       }
       const entry = parsed.data as SignedAuditEntryV1;
       const index = validatedEntries.length;
-      await this.verifyEntry(entry, verificationPolicy, boundaries, cryptoReasons);
-      this.verifyChainPosition(entry, validatedEntries[index - 1], index, chainReasons);
+      const until = await checkEntry(
+        this.options, entry, verificationPolicy, boundaries, cryptoReasons,
+      );
+      if (until !== undefined) ended.push({ entry, until });
+      checkChainPosition(entry, validatedEntries[index - 1], index, chainReasons);
       validatedEntries.push(entry);
+    }
+    // A record whose key has ended is the signer's word alone until evidence dates it.
+    if (ended.length > 0 || (context.successorGeneses?.length ?? 0) > 0) {
+      const dating = await this.dating(verificationPolicy, context, validatedEntries);
+      for (const reason of dating.reasons) cryptoReasons.add(reason);
+      for (const { entry, until } of ended) {
+        if (!dated(dating.entryAt(entry.entryDigest), until)) {
+          cryptoReasons.add(AUDIT_REASON_CODES.KEY_ENDED_UNDATED);
+        }
+      }
     }
 
     const authorizationPresent = validatedEntries.some(
@@ -417,6 +207,14 @@ export class AuditArtifactVerifier {
       : dimension('invalid', [AUDIT_REASON_CODES.KEY_NOT_CURRENT]);
   }
 
+  /**
+   * Whether a key has ended by this verifier's clock, or, with no clock, has an end at all: what
+   * such a key signed is its holder's word alone on when it was signed.
+   */
+  keyHasEnded(keys: readonly HistoricalAuditKeyPolicy[], signer: SignerRef): boolean {
+    return !keyIsLive(keys, signer, this.options.verifiedAt?.());
+  }
+
   /** Verifies a checkpoint and recomputes its root from the complete journal prefix. */
   async verifyCheckpoint(
     checkpoint: SignedAuditCheckpointV1,
@@ -424,7 +222,7 @@ export class AuditArtifactVerifier {
     policy: AuditVerificationPolicyV1,
     context: AuditVerificationContext = {},
   ): Promise<AuditVerificationDimension> {
-    const checked = await this.checkSignedCheckpoint(checkpoint, policy, context);
+    const checked = await this.checkSignedCheckpoint(checkpoint, policy, context, entries);
     if (checked.kind === 'rejected') return checked.result;
     const { core, reasons } = checked;
 
@@ -457,7 +255,7 @@ export class AuditArtifactVerifier {
     policy: AuditVerificationPolicyV1,
     context: AuditVerificationContext = {},
   ): Promise<AuditVerificationDimension> {
-    const checked = await this.checkSignedCheckpoint(checkpoint, policy, context);
+    const checked = await this.checkSignedCheckpoint(checkpoint, policy, context, []);
     if (checked.kind === 'rejected') return checked.result;
     const { core, reasons } = checked;
     if (core.firstSequence !== '0' ||
@@ -498,10 +296,15 @@ export class AuditArtifactVerifier {
     if (!policy.acceptedAlgorithms.includes(core.observer.alg)) {
       reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM);
     }
-    const boundaries = await this.boundaries([
-      ...(context.checkpoints ?? []),
-      validatedCheckpoint,
-    ]);
+    const boundaries = withBoundary(
+      await this.boundaries(context.checkpoints ?? []),
+      await hashAuditValue(
+        this.options.hasher,
+        AUDIT_DIGEST_DOMAINS.checkpoint,
+        validatedCheckpoint.core,
+      ),
+      validatedCheckpoint.core,
+    );
     const trust = keyTrust(
       policy.trustedObservers,
       core.observer,
@@ -541,72 +344,78 @@ export class AuditArtifactVerifier {
     return dimension(verdictOf(reasons), reasons);
   }
 
+  /**
+   * Checks a checkpoint on its own ({@link checkCheckpoint}), and, when its issuer key has ended,
+   * whether evidence dates it before that end.
+   */
   private async checkSignedCheckpoint(
     checkpoint: SignedAuditCheckpointV1,
     policy: AuditVerificationPolicyV1,
     context: AuditVerificationContext,
+    entries: readonly SignedAuditEntryV1[],
   ): Promise<CheckpointCheck> {
-    if (!auditVerificationPolicySchema.safeParse(policy).success) {
-      return {
-        kind: 'rejected',
-        result: dimension('invalid', [AUDIT_REASON_CODES.VERIFICATION_POLICY_INVALID]),
-      };
-    }
-    const parsedCheckpoint = signedAuditCheckpointSchema.safeParse(checkpoint);
-    if (!parsedCheckpoint.success) {
-      return {
-        kind: 'rejected',
-        result: dimension('invalid', [AUDIT_REASON_CODES.SCHEMA_INVALID]),
-      };
-    }
-    const reasons = new Set<string>();
-    const validated = parsedCheckpoint.data as SignedAuditCheckpointV1;
-    const core = validated.core;
-    if (!policy.acceptedIntegritySuites.includes(core.integritySuite)) {
-      reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_SUITE);
-    }
-    if (!policy.acceptedAlgorithms.includes(core.issuer.alg)) {
-      reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM);
-    }
-    const epochPolicy = policy.trustedLedgerEpochs.find((candidate) =>
-      candidate.ledgerId === core.ledgerId &&
-      candidate.ledgerEpochId === core.ledgerEpochId);
-    const trust = keyTrust(
-      epochPolicy?.recorderKeys ?? [],
-      core.issuer,
-      core.createdAt,
-      core,
-      BigInt(core.treeSize),
-      await this.boundaries([...(context.checkpoints ?? []), validated]),
-      epochPolicy,
+    const checked = await checkCheckpoint(
+      this.options, checkpoint, policy, await this.boundaries(context.checkpoints ?? []),
     );
-    if (trust === 'outside') reasons.add(AUDIT_REASON_CODES.UNTRUSTED_RECORDER);
-    if (trust === 'unresolved') reasons.add(AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED);
+    if (checked.kind === 'checked' && checked.until !== undefined) {
+      const dating = await this.dating(policy, context, entries, checkpoint);
+      if (!dated(dating.checkpointAt(checked.digest), checked.until)) {
+        checked.reasons.add(AUDIT_REASON_CODES.KEY_ENDED_UNDATED);
+      }
+    }
+    return checked;
+  }
 
-    const expectedDigest = await hashAuditValue(
-      this.options.hasher,
-      AUDIT_DIGEST_DOMAINS.checkpoint,
-      core,
-    );
-    if (expectedDigest !== validated.checkpointDigest) {
-      reasons.add(AUDIT_REASON_CODES.CHECKPOINT_DIGEST_MISMATCH);
+  /**
+   * What dates artifacts whose key has ended, from what this verification was given: the
+   * context's checkpoints and successor geneses, and `entries`; for a replay bundle, everything it
+   * carries instead, gathered once however many groups and checkpoints it verifies. `checkpoint`,
+   * when given, is the one being checked, whose own chain and tree are evidence too.
+   */
+  private dating(
+    policy: AuditVerificationPolicyV1,
+    context: AuditVerificationContext,
+    entries: readonly SignedAuditEntryV1[],
+    checkpoint?: SignedAuditCheckpointV1,
+  ): Promise<Dating> {
+    const carried = carriedEvidence(context);
+    const gather = async (): Promise<Dating> => gatherDating(this.options, {
+      policy,
+      boundaries: await this.boundaries(context.checkpoints ?? []),
+      checkpoints: carried !== undefined || checkpoint === undefined
+        ? context.checkpoints ?? []
+        : [...(context.checkpoints ?? []), checkpoint],
+      offered: context.successorGeneses ?? [],
+      entries,
+      carried,
+    });
+    if (carried === undefined) return gather();
+    let cached = this.dated.get(context);
+    if (cached?.policy !== policy) {
+      cached = { policy, dating: gather() };
+      this.dated.set(context, cached);
     }
-    if ((await this.options.signatures.verify(
-      canonicalizeJsonBytes(core),
-      validated.jws,
-      core.issuer,
-    )) !== true) {
-      reasons.add(AUDIT_REASON_CODES.CHECKPOINT_SIGNATURE_INVALID);
-    }
-    return { kind: 'checked', core, reasons };
+    return cached.dating;
   }
 
   /**
    * Indexes candidate checkpoints by their recomputed digest. A policy names a
    * boundary by digest, which commits to the checkpoint core, so a matching
    * core authenticates the boundary's ledger epoch and tree size by itself.
+   * A frozen list cannot change, so its index is built once however many
+   * artifacts are checked against it; a replay bundle freezes its own.
    */
-  private async boundaries(
+  private boundaries(checkpoints: readonly unknown[]): Promise<CheckpointBoundaries> {
+    if (!Object.isFrozen(checkpoints)) return this.indexBoundaries(checkpoints);
+    let index = this.indexed.get(checkpoints);
+    if (index === undefined) {
+      index = this.indexBoundaries(checkpoints);
+      this.indexed.set(checkpoints, index);
+    }
+    return index;
+  }
+
+  private async indexBoundaries(
     checkpoints: readonly unknown[],
   ): Promise<Map<string, CheckpointBoundary>> {
     const result = new Map<string, CheckpointBoundary>();
@@ -624,105 +433,4 @@ export class AuditArtifactVerifier {
     }
     return result;
   }
-
-  private async verifyEntry(
-    entry: SignedAuditEntryV1,
-    policy: AuditVerificationPolicyV1,
-    boundaries: CheckpointBoundaries,
-    reasons: Set<string>,
-  ): Promise<void> {
-    if (!policy.acceptedIntegritySuites.includes(entry.core.integritySuite)) {
-      reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_SUITE);
-    }
-    if (!policy.acceptedAlgorithms.includes(entry.core.recorder.alg)) {
-      reasons.add(AUDIT_REASON_CODES.UNSUPPORTED_ALGORITHM);
-    }
-
-    const epochPolicy = policy.trustedLedgerEpochs.find((candidate) =>
-      candidate.ledgerId === entry.core.ledgerId &&
-      candidate.ledgerEpochId === entry.core.ledgerEpochId);
-    const trust = keyTrust(
-      epochPolicy?.recorderKeys ?? [],
-      entry.core.recorder,
-      entry.core.recordedAt,
-      entry.core,
-      BigInt(entry.core.sequence) + 1n,
-      boundaries,
-      epochPolicy,
-    );
-    if (trust === 'outside') reasons.add(AUDIT_REASON_CODES.UNTRUSTED_RECORDER);
-    if (trust === 'unresolved') reasons.add(AUDIT_REASON_CODES.KEY_BOUNDARY_UNRESOLVED);
-
-    const eventDigest = await digestAuditEvent(this.options.hasher, entry.core.event);
-    if (eventDigest !== entry.core.eventDigest || eventDigest !== entry.eventDigest) {
-      reasons.add(AUDIT_REASON_CODES.EVENT_DIGEST_MISMATCH);
-    }
-    const evidenceDigest = await digestAuditEvidenceManifest(
-      this.options.hasher,
-      entry.core.event,
-    );
-    if (evidenceDigest !== entry.core.evidenceManifestDigest) {
-      reasons.add(AUDIT_REASON_CODES.EVIDENCE_MANIFEST_DIGEST_MISMATCH);
-    }
-    const entryDigest = await digestAuditEntry(this.options.hasher, entry.core);
-    if (entryDigest !== entry.entryDigest) reasons.add(AUDIT_REASON_CODES.ENTRY_DIGEST_MISMATCH);
-
-    const expectedReceipt = buildAuditRecorderReceiptCore(entry.core, entry.entryDigest);
-    if (!exactJson(expectedReceipt, entry.recorderReceipt.core)) {
-      reasons.add(AUDIT_REASON_CODES.RECEIPT_MISMATCH);
-    }
-    if ((await this.options.signatures.verify(
-      canonicalizeJsonBytes(entry.recorderReceipt.core),
-      entry.recorderReceipt.jws,
-      entry.core.recorder,
-    )) !== true) {
-      reasons.add(AUDIT_REASON_CODES.SIGNATURE_INVALID);
-    }
-  }
-
-  private verifyChainPosition(
-    entry: SignedAuditEntryV1,
-    previous: SignedAuditEntryV1 | undefined,
-    index: number,
-    reasons: Set<string>,
-  ): void {
-    if (previous === undefined) {
-      if (entry.core.sequence === '0') {
-        if (entry.core.previousEntryDigest !== null ||
-          entry.core.event.eventType !== 'ledger.epoch.started') {
-          reasons.add(AUDIT_REASON_CODES.GENESIS_INVALID);
-        }
-      } else if (index === 0 && entry.core.previousEntryDigest === null) {
-        reasons.add(AUDIT_REASON_CODES.PREDECESSOR_MISMATCH);
-      }
-      return;
-    }
-    if (entry.core.ledgerId !== previous.core.ledgerId ||
-      entry.core.ledgerEpochId !== previous.core.ledgerEpochId) {
-      reasons.add(AUDIT_REASON_CODES.LEDGER_SCOPE_MISMATCH);
-    }
-    try {
-      if (BigInt(entry.core.sequence) !== BigInt(previous.core.sequence) + 1n) {
-        reasons.add(AUDIT_REASON_CODES.SEQUENCE_GAP);
-      }
-    } catch {
-      reasons.add(AUDIT_REASON_CODES.SEQUENCE_GAP);
-    }
-    if (entry.core.previousEntryDigest !== previous.entryDigest) {
-      reasons.add(AUDIT_REASON_CODES.PREDECESSOR_MISMATCH);
-    }
-  }
-}
-
-export function mergeAuditDimensions(
-  ...values: readonly AuditVerificationDimension[]
-): AuditVerificationDimension {
-  if (values.length === 0) {
-    // An empty merge must never inherit a passing verdict by vacuous truth.
-    return dimension('indeterminate', [AUDIT_REASON_CODES.NOT_EVALUATED]);
-  }
-  const verdict = values.some((value) => value.verdict === 'invalid')
-    ? 'invalid'
-    : values.every((value) => value.verdict === 'valid') ? 'valid' : 'indeterminate';
-  return dimension(verdict, values.flatMap((value) => value.reasonCodes));
 }

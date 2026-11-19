@@ -38,11 +38,6 @@ async function main() {
   }
 
   const proof = JSON.parse(input) as DetachedProof;
-  console.log('Proof DID: ', proof.meta?.did);
-  console.log('Key ID:    ', proof.meta?.kid);
-  console.log('Session:   ', proof.meta?.sessionId);
-  console.log('Outcome:   ', proof.meta?.outcome ?? 'allowed (success)');
-  console.log('Timestamp: ', new Date((proof.meta?.ts ?? 0) * 1000).toISOString());
 
   const verifier = new ProofVerifier({
     cryptoProvider: new NodeCryptoProvider(),
@@ -52,19 +47,30 @@ async function main() {
     timestampSkewSeconds: 300, // generous for offline verification
   });
 
-  // Resolve the signer's public key from its DID (did:key resolved offline).
+  // Resolve the signer's public key from the DID and key id the proof claims (did:key resolved
+  // offline). Nothing else is read from the proof as received: the verifier holds that key to
+  // the signature, which covers both.
   const jwk = await verifier.fetchPublicKeyFromDID(proof.meta.did, proof.meta.kid);
   if (!jwk) {
-    console.log('\nVerification result: INVALID (could not resolve signer DID)');
+    console.log('Verification result: INVALID (could not resolve signer DID)');
     process.exit(1);
   }
 
   const result = await verifier.verifyProof(proof, jwk);
-  console.log('\nVerification result:', result.valid ? 'VALID' : 'INVALID');
-  if (!result.valid) {
+  console.log('Verification result:', result.valid ? 'VALID' : 'INVALID');
+  if (!result.valid || result.meta === undefined) {
     console.log('Reason:', result.errorCode, '-', result.reason);
     process.exit(1);
   }
+
+  // Read the meta the verifier hands back, which holds only what the signature covers: a member
+  // written beside the signed ones, or an optional claim left empty, is not in it (SPEC §7.4).
+  const meta = result.meta;
+  console.log('Proof DID: ', meta.did);
+  console.log('Key ID:    ', meta.kid);
+  console.log('Session:   ', meta.sessionId);
+  console.log('Outcome:   ', meta.outcome ?? 'allowed (success)');
+  console.log('Timestamp: ', new Date(meta.ts * 1000).toISOString());
 }
 
 main().catch((err) => {

@@ -6,9 +6,12 @@
  * quoting the body, no byte cap, no redirect, no refusal made after a DNS lookup and no transport
  * text, all of which go to the operator's log. It says why only where that was decided from the URL
  * alone, before any request (SafeFetch's https rule, or its refusal of a private IP literal or a
- * localhost name), or a deadline passed. The code and whether it is transient are as before, and a
- * verdict on a list that was read keeps its reason. Every test uses `@kya-os/mcp/card` as an
- * adopter calls it.
+ * localhost name), or a deadline passed. The code and whether it is transient are as before. A list
+ * that was read is refused the same way where a rule refused it before its proof was checked (its
+ * keeper, its purpose, its `id`, or the dates of a list no proof is checked for), since the rule
+ * quotes what the host answered, which may be any JSON document the verifier can reach. Once the
+ * list's proof has verified, what it says is its issuer's, and a verdict on it keeps its reason.
+ * Every test uses `@kya-os/mcp/card` as an adopter calls it.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +20,9 @@ import {
   createDelegationProofVerifier,
   createRevocationChecker,
   createSafeFetch,
+  createStatusListProofVerifier,
   isTransientRefusal,
+  requireDelegation,
   toDelegationChainMeta,
   verifyRequestDelegation,
   type RefusalCode,
@@ -25,7 +30,8 @@ import {
   type SafeFetchTransport,
 } from '../index.js';
 import { createDidKeyResolver } from '../../index.js';
-import { NOW_MS, RESOURCE, STATUS_URL, now, parties, twoHopChain } from './signed-chain-helpers.js';
+import { NOW_MS, RESOURCE, STATUS_URL, hop, now, parties, serveAt, statusList, twoHopChain } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const LIST = 'https://jenkins.corp.example/status/1';
 
@@ -94,7 +100,7 @@ const UNREAD: [string, SafeFetch, RefusalCode, string][] = [
 describe('the Card revocation checker, when it could not read a status list', () => {
   it.each(UNREAD)('names the list and says only that it could not be read, logging the rest, for %s', async (_name, fetch, code, logged) => {
     const outcome = await answerFor(fetch);
-    expect(outcome.answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked`, ...coded(code) });
+    expect(outcome.answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked${WITHHELD_SUFFIX}`, ...coded(code) });
     expect(outcome.logged).toContain(logged);
   });
 
@@ -152,5 +158,89 @@ describe('a delegation hop whose status list could not be read', () => {
     expect(reasons).toHaveLength(1);
     expect(reasons[0]).toContain(`the status list at "${STATUS_URL}" could not be read or checked`);
     expect(reasons[0]).not.toContain('10.1.2.3');
+  });
+});
+
+/** A document only the verifier can read, whose `issuer` names an internal realm. */
+const INTERNAL_DOCUMENT = {
+  issuer: 'https://login.corp.internal/realms/tenant-7731-payments',
+  jwks_uri: 'https://login.corp.internal/realms/tenant-7731-payments/certs',
+};
+
+describe('the Card revocation checker, when it refuses a list it read before checking its proof', () => {
+  const p = parties();
+  const didResolver = createDidKeyResolver();
+
+  /** The checker's answer for the agent's entry at {@link LIST}, where `body` is served, with what was logged. */
+  async function answerOfRead(body: Record<string, unknown>, { proofChecked = true } = {}) {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const check = createRevocationChecker({
+      fetch: serveAt({ [LIST]: body }),
+      now,
+      ...(proofChecked ? { verifyStatusList: createStatusListProofVerifier({ didResolver }) } : {}),
+    });
+    const answer = await check({ statusListIndex: '7', statusListCredential: LIST }, { credentialIssuer: p.agent.did });
+    return { answer, logged: warn.mock.calls.map((call) => call.map(String).join(' ')).join('\n') };
+  }
+
+  it.each<[string, () => Record<string, unknown>, RefusalCode, string, boolean]>([
+    ['an OpenID configuration, quoting its issuer', () => INTERNAL_DOCUMENT, 'status_signer_untrusted', 'login.corp.internal/realms/tenant-7731', true],
+    ['a document that names no issuer', () => ({ jwks_uri: INTERNAL_DOCUMENT.jwks_uri }), 'status_signer_untrusted', 'status list names no issuer', true],
+    ["the issuer's own list stating another id", () => statusList(p.agent, [], { id: 'https://elsewhere.example/1' }), 'status_signer_untrusted', '"https://elsewhere.example/1" is not the URL', true],
+    [
+      "the issuer's own list of another purpose",
+      () => statusList(p.agent, [], { id: LIST, credentialSubject: { statusPurpose: 'suspension' } }),
+      'status_signer_untrusted',
+      `the list's is "suspension"`,
+      true,
+    ],
+    ['a list past its validUntil, where no proof is checked', () => statusList(p.agent, [], { id: LIST, validUntil: '2020-01-01T00:00:00Z' }), 'status_unavailable', 'expired at "2020-01-01T00:00:00Z"', false],
+  ])('names the list and says only that it could not be read or checked, logging the rest, for %s', async (_name, body, code, said, proofChecked) => {
+    const { answer, logged } = await answerOfRead(body(), { proofChecked });
+    expect(answer).toEqual({ revoked: true, fresh: false, reason: `the status list at "${LIST}" could not be read or checked${WITHHELD_SUFFIX}`, ...coded(code) });
+    expect(logged).toContain(said);
+  });
+
+  it("says why it refuses a list whose proof verified, since the list's words are then its issuer's", async () => {
+    const { answer } = await answerOfRead(statusList(p.agent, [], { id: LIST, validUntil: '2020-01-01T00:00:00Z' }));
+    expect(answer).toEqual({ revoked: true, fresh: false, reason: 'status list expired at "2020-01-01T00:00:00Z" (its validUntil)', ...coded('status_unavailable') });
+  });
+});
+
+describe('a delegation hop whose status entry names a document that is no status list', () => {
+  it('is refused to whoever presented it telling nothing the document said, which the log is told', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const p = parties();
+    const [root] = twoHopChain(p);
+    // The agent signs the leaf itself, so the status-list URL in it is the agent's to choose.
+    const leaf = hop({
+      issuer: p.agent,
+      invoker: p.subAgent.did,
+      id: 'urn:zcap:agent-leaf',
+      parentCapability: 'urn:zcap:acme-root',
+      allowedAction: ['orders.place'],
+      caveats: [{ type: 'MaxAmount', limit: '100.00', currency: 'USD' }],
+      statusIndex: 7,
+      statusListCredential: LIST,
+    });
+    const didResolver = createDidKeyResolver();
+    const verdict = await requireDelegation({
+      resource: RESOURCE,
+      trustedRootIssuers: [p.acme.did],
+      verifyHopProof: createDelegationProofVerifier({ didResolver }),
+      checkRevocation: createRevocationChecker({
+        fetch: serveAt({ [STATUS_URL]: statusList(p.acme), [LIST]: INTERNAL_DOCUMENT }),
+        now,
+        verifyStatusList: createStatusListProofVerifier({ didResolver }),
+      }),
+      now: () => NOW_MS,
+    })({ meta: toDelegationChainMeta([root, leaf]), proofDid: p.subAgent.did, action: 'orders.place' });
+    if (verdict.ok) throw new Error('a hop whose status list is no status list was accepted');
+    expect(verdict.error.code).toBe('delegation_revoked');
+    expect(verdict.error.reasons?.[0]?.endsWith(`subtree invalidated: the status list at "${LIST}" could not be read or checked${WITHHELD_SUFFIX}`)).toBe(true);
+    const told = JSON.stringify(verdict);
+    expect(told).not.toContain('login.corp.internal');
+    expect(told).not.toContain('tenant-7731');
+    expect(warn.mock.calls.flat().join('\n')).toContain('login.corp.internal/realms/tenant-7731-payments');
   });
 });

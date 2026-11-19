@@ -7,8 +7,9 @@
  * random and grows with each refusal, up to a bound on how many refusals a change outlasts.
  */
 
-import type { StatusList2021Credential } from '../types/protocol.js';
+import type { StatusListCredential } from '../types/protocol.js';
 import { describeOptionValue } from '../utils/describe-value.js';
+import { LONGEST_WAIT_MS } from '../utils/keyed-lock.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import { supportsConditionalWrite, type StatusListStorageProvider } from './statuslist-storage.js';
 
@@ -21,13 +22,12 @@ const LEAST_WAIT_CEILING_MS = 100;
 /** How many refusals double the ceiling on a wait that the length of a try sets. */
 const REFUSALS_PER_CEILING_DOUBLING = 4;
 
-/**
- * The longest one wait between two tries of a write may be, in milliseconds, however slow the
- * tries. A change so gives up within `maxWriteConflicts` waits of this length and one try more
- * than that many tries, while the manager holds the list's turn and its other changes of that
- * list wait behind it.
+/*
+ * The longest one wait between two tries of a write is LONGEST_WAIT_MS, however slow the tries. A
+ * change so gives up within `maxWriteConflicts` waits of this length and one try more than that
+ * many tries, while the manager holds the list's turn and its other changes of that list wait
+ * behind it.
  */
-const LONGEST_WAIT_MS = 10_000;
 
 /** The options of a `StatusList2021Manager` that say how it retries a refused write. */
 export interface StatusListWriteRetryOptions {
@@ -155,7 +155,7 @@ const UNCONDITIONAL_WRITE_WARNING =
 /** What a change to a stored list comes to: the signed list to store, if any, and the answer. */
 export interface StatusListChange<T> {
   /** The signed list to store, or none when the stored list stands as it is. */
-  readonly write?: StatusList2021Credential;
+  readonly write?: StatusListCredential;
   readonly result: T;
 }
 
@@ -175,9 +175,9 @@ export interface StatusListChange<T> {
  *   a boolean, since the write cannot then be known to have been stored or refused.
  */
 export async function commitStatusListChange<T>(
-  storage: StatusListStorageProvider,
+  storage: StatusListStorageProvider<StatusListCredential>,
   statusListId: string,
-  change: (stored: StatusList2021Credential | null) => Promise<StatusListChange<T>>,
+  change: (stored: StatusListCredential | null) => Promise<StatusListChange<T>>,
   retry: StatusListWriteRetry,
 ): Promise<T> {
   if (!supportsConditionalWrite(storage)) {

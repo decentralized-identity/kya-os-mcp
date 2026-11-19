@@ -1,0 +1,1131 @@
+{
+  "version": "1.13.0",
+  "category": "signed-proof",
+  "vectors": [
+    {
+      "id": "signed-proof/request-binding-named",
+      "category": "signed-proof",
+      "description": "Request proof whose protected header states the §7.8 digest of the credential object its call presents, as the generator writes it with no input but the arguments the call sends",
+      "expected": "pass",
+      "reason": "The holder names the credential it presents, in the form it is sent, so the proof is bound to that delegation",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpmNzliMmFjYzhlNDc4ODg5ZGVjOTBjMmU0Y2E0YjNlMWY0N2Y0ODg4MmMyMzc3NjU5MzE3ZWRlMDVlZTMzY2Q2In0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.7d0ujpv3h1AMMTKu08D3dFjTiMP-azkWTh9Get7z_hDtJvwytANXNn62KF8sr6i--XSzlxAx5FJtP4nX80hrAA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-named-vc-jwt",
+      "category": "signed-proof",
+      "description": "Request proof that states the digest of the compact VC-JWT its call presents",
+      "expected": "pass",
+      "reason": "A credential sent as a VC-JWT is named by the digest of that form",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1Njo5YjIyN2U0YTUwOTVjNzk5Zjg3ZGNlMWNjZWZhZjcxN2RlYTI2ODlkYTFhMDlkMjRkMWU2NTM5MTc0OGY3M2RlIn0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMiIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.Odr9AgweVztUjGHnCLhq4iV2nLIbiPnDX7595WuZvIy9vbe9o46S0CkWSEO9KRVYXpHtmBVDNShOpQnsqPxnDg",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0002",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ejZNa29KVlZDZ3NIemNVbmo0Vkg3aURHcTFvRUt2dkdjTllDb3hNVm5rZWpqc2lQI3o2TWtvSlZWQ2dzSHpjVW5qNFZIN2lER3Exb0VLdnZHY05ZQ294TVZua2VqanNpUCJ9.eyJpc3MiOiJkaWQ6a2V5Ono2TWtvSlZWQ2dzSHpjVW5qNFZIN2lER3Exb0VLdnZHY05ZQ294TVZua2VqanNpUCIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidmMiOnsiQGNvbnRleHQiOlsiaHR0cHM6Ly93d3cudzMub3JnLzIwMTgvY3JlZGVudGlhbHMvdjEiLCJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2RlbGVnYXRpb24vY29udGV4dC92MS4wLjAiXSwiaWQiOiJ1cm46dXVpZDpkZWwtcmVjb3Jkcy1yZWFkIiwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCIsIkRlbGVnYXRpb25DcmVkZW50aWFsIl0sImlzc3VlciI6ImRpZDprZXk6ejZNa29KVlZDZ3NIemNVbmo0Vkg3aURHcTFvRUt2dkdjTllDb3hNVm5rZWpqc2lQIiwiaXNzdWFuY2VEYXRlIjoiMjAyNi0wMS0wMVQwMDowMDowMC4wMDBaIiwiY3JlZGVudGlhbFN1YmplY3QiOnsiaWQiOiJkaWQ6a2V5Ono2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtcmVjb3Jkcy1yZWFkIiwiaXNzdWVyRGlkIjoiZGlkOmtleTp6Nk1rb0pWVkNnc0h6Y1VuajRWSDdpREdxMW9FS3Z2R2NOWUNveE1WbmtlampzaVAiLCJzdWJqZWN0RGlkIjoiZGlkOmtleTp6Nk1rZ1JRanJkcVU3aE1RdkNSMkRhZWt6aWVBaFp5UFdQUk5OMmRncm91VlZxUm4iLCJzY29wZXMiOlsicmVjb3JkczpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJyZWNvcmRzOnJlYWQiXSwiYXVkaWVuY2UiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSJ9LCJzdGF0dXMiOiJhY3RpdmUiLCJjcmVhdGVkQXQiOjE3NTAwMDAwMDAwMDB9fX19.Cq6N4e2PC0GAUnQ2qihIpR1J16wRU9wvmJ5GpGa3n_wvJKlFrIggXLi4LayIXMtv7NfZ87ZURHk3coCRviqGDQ"
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-reserialized",
+      "category": "signed-proof",
+      "description": "The proof that names a credential object, beside a copy of it that differs in nothing its issuer signed: other proof metadata, and its signature padded",
+      "expected": "pass",
+      "reason": "A credential is digested by what its issuer signed and the signature bytes, so a copy that differs in nothing signed is the credential named",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpmNzliMmFjYzhlNDc4ODg5ZGVjOTBjMmU0Y2E0YjNlMWY0N2Y0ODg4MmMyMzc3NjU5MzE3ZWRlMDVlZTMzY2Q2In0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.7d0ujpv3h1AMMTKu08D3dFjTiMP-azkWTh9Get7z_hDtJvwytANXNn62KF8sr6i--XSzlxAx5FJtP4nX80hrAA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2031-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw==",
+              "note": "added by a holder"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-other-delegation",
+      "category": "signed-proof",
+      "description": "The proof that names one delegation of the agent, beside another delegation the same user gave the same agent",
+      "expected": "fail",
+      "reason": "A party on the path that holds another delegation of the agent cannot put it in place of the one the holder named: the digests differ",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpmNzliMmFjYzhlNDc4ODg5ZGVjOTBjMmU0Y2E0YjNlMWY0N2Y0ODg4MmMyMzc3NjU5MzE3ZWRlMDVlZTMzY2Q2In0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.7d0ujpv3h1AMMTKu08D3dFjTiMP-azkWTh9Get7z_hDtJvwytANXNn62KF8sr6i--XSzlxAx5FJtP4nX80hrAA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-write",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-write",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "cWaJP9PLb04obA9f1v-4GpNXjZxGp5vruuOvkqDpWyKgIif2d4zRwzFR2GGTfPk-GeozljaidY2-45iSN51TBg"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-reissued-under-same-id",
+      "category": "signed-proof",
+      "description": "The proof that names a credential, beside one its issuer issued again under the same id with wider scopes",
+      "expected": "fail",
+      "reason": "The statement is a digest of what the issuer signed, not an id, so a credential issued again under the same id is another credential",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpmNzliMmFjYzhlNDc4ODg5ZGVjOTBjMmU0Y2E0YjNlMWY0N2Y0ODg4MmMyMzc3NjU5MzE3ZWRlMDVlZTMzY2Q2In0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.7d0ujpv3h1AMMTKu08D3dFjTiMP-azkWTh9Get7z_hDtJvwytANXNn62KF8sr6i--XSzlxAx5FJtP4nX80hrAA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "ThGj5CXGjur4Mws5vX5hvOk1fbzTD06joDNiz_D1wB4DGbmWMJV6DecQJvzYMFoRQLo49sy2mRo5triARcyXAQ"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-other-form",
+      "category": "signed-proof",
+      "description": "The proof that names a credential object, beside the same delegation sent as a compact VC-JWT",
+      "expected": "fail",
+      "reason": "A proof names the credential in the form it is sent; the object and the VC-JWT of one delegation have different signed forms, so different digests",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpmNzliMmFjYzhlNDc4ODg5ZGVjOTBjMmU0Y2E0YjNlMWY0N2Y0ODg4MmMyMzc3NjU5MzE3ZWRlMDVlZTMzY2Q2In0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.7d0ujpv3h1AMMTKu08D3dFjTiMP-azkWTh9Get7z_hDtJvwytANXNn62KF8sr6i--XSzlxAx5FJtP4nX80hrAA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6ImRpZDprZXk6ejZNa29KVlZDZ3NIemNVbmo0Vkg3aURHcTFvRUt2dkdjTllDb3hNVm5rZWpqc2lQI3o2TWtvSlZWQ2dzSHpjVW5qNFZIN2lER3Exb0VLdnZHY05ZQ294TVZua2VqanNpUCJ9.eyJpc3MiOiJkaWQ6a2V5Ono2TWtvSlZWQ2dzSHpjVW5qNFZIN2lER3Exb0VLdnZHY05ZQ294TVZua2VqanNpUCIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidmMiOnsiQGNvbnRleHQiOlsiaHR0cHM6Ly93d3cudzMub3JnLzIwMTgvY3JlZGVudGlhbHMvdjEiLCJodHRwczovL3NjaGVtYS5reWEtb3Mub3JnL3YxL3Byb3RvY29sL2RlbGVnYXRpb24vY29udGV4dC92MS4wLjAiXSwiaWQiOiJ1cm46dXVpZDpkZWwtcmVjb3Jkcy1yZWFkIiwidHlwZSI6WyJWZXJpZmlhYmxlQ3JlZGVudGlhbCIsIkRlbGVnYXRpb25DcmVkZW50aWFsIl0sImlzc3VlciI6ImRpZDprZXk6ejZNa29KVlZDZ3NIemNVbmo0Vkg3aURHcTFvRUt2dkdjTllDb3hNVm5rZWpqc2lQIiwiaXNzdWFuY2VEYXRlIjoiMjAyNi0wMS0wMVQwMDowMDowMC4wMDBaIiwiY3JlZGVudGlhbFN1YmplY3QiOnsiaWQiOiJkaWQ6a2V5Ono2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsImRlbGVnYXRpb24iOnsiaWQiOiJkZWwtcmVjb3Jkcy1yZWFkIiwiaXNzdWVyRGlkIjoiZGlkOmtleTp6Nk1rb0pWVkNnc0h6Y1VuajRWSDdpREdxMW9FS3Z2R2NOWUNveE1WbmtlampzaVAiLCJzdWJqZWN0RGlkIjoiZGlkOmtleTp6Nk1rZ1JRanJkcVU3aE1RdkNSMkRhZWt6aWVBaFp5UFdQUk5OMmRncm91VlZxUm4iLCJzY29wZXMiOlsicmVjb3JkczpyZWFkIl0sImNvbnN0cmFpbnRzIjp7InNjb3BlcyI6WyJyZWNvcmRzOnJlYWQiXSwiYXVkaWVuY2UiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSJ9LCJzdGF0dXMiOiJhY3RpdmUiLCJjcmVhdGVkQXQiOjE3NTAwMDAwMDAwMDB9fX19.Cq6N4e2PC0GAUnQ2qihIpR1J16wRU9wvmJ5GpGa3n_wvJKlFrIggXLi4LayIXMtv7NfZ87ZURHk3coCRviqGDQ"
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-none",
+      "category": "signed-proof",
+      "description": "Request proof that states \"none\", for a call that presents no delegation",
+      "expected": "pass",
+      "reason": "A holder that presents no delegation says so, and the statement holds beside none",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6Im5vbmUifQ.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMyIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.N-oYZEtzJum2sCX1dOizuU6h7lgbfgK8axVvQmGPq-XNZXsgii-AFPsmubFSt1UI9QabxoDEhOm41UXel77gBw",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0003",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": null
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-none-beside-delegation",
+      "category": "signed-proof",
+      "description": "The proof that states \"none\", beside a delegation, held by a verifier that requires a proof to name the credential presented",
+      "expected": "fail",
+      "reason": "A delegation added beside a proof that says its call presents none is not the holder's choice",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6Im5vbmUifQ.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMyIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.N-oYZEtzJum2sCX1dOizuU6h7lgbfgK8axVvQmGPq-XNZXsgii-AFPsmubFSt1UI9QabxoDEhOm41UXel77gBw",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0003",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw"
+            }
+          },
+          "requestBinding": "require"
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-unnamed-beside-delegation",
+      "category": "signed-proof",
+      "description": "Request proof whose protected header states nothing of its delegation, beside a delegation, held by a verifier that requires a proof to name the credential presented",
+      "expected": "fail",
+      "reason": "A proof that names no delegation is good beside any delegation of its subject, so a verifier that requires naming refuses it",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwNCIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.rwFKCzcMcefbNfYvn-wX---g9rPE0pU6QlgYJy8k2JE91ObB_uFYnF1a6E51aT7leWQZ9JgVinLUvV-9Q6VTDg",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0004",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw"
+            }
+          },
+          "requestBinding": "require"
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-unnamed",
+      "category": "signed-proof",
+      "description": "The proof that states nothing of its delegation, for a call that presents none, held by a verifier that requires a proof to name the credential presented",
+      "expected": "fail",
+      "reason": "A holder that presents no delegation states \"none\"; a proof that states nothing does not say which authority its call is made under",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwNCIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.rwFKCzcMcefbNfYvn-wX---g9rPE0pU6QlgYJy8k2JE91ObB_uFYnF1a6E51aT7leWQZ9JgVinLUvV-9Q6VTDg",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0004",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": null,
+          "requestBinding": "require"
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-statement-not-lowercase",
+      "category": "signed-proof",
+      "description": "Request proof that states the digest of the credential presented with its hex digits in upper case",
+      "expected": "fail",
+      "reason": "The statement is a credential digest as §7.8 writes one, sha256: and 64 lowercase hex digits, or \"none\"; any other value is malformed and refused",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpGNzlCMkFDQzhFNDc4ODg5REVDOTBDMkU0Q0E0QjNFMUY0N0Y0ODg4MkMyMzc3NjU5MzE3RURFMDVFRTMzQ0Q2In0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwNSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.dF8hE_vRWdyr0IQI720duS26YK_-HgE8l_BtN8DmpT4afKnJh0_0_HJmgPxRfDgdhWDncAkhKwtVQnARR1nGDg",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0005",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-statement-not-a-string",
+      "category": "signed-proof",
+      "description": "Request proof that states an array holding the digest of the credential presented",
+      "expected": "fail",
+      "reason": "A statement that is not a string is neither a credential digest nor \"none\", so it is malformed and refused",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6WyJzaGEyNTY6Zjc5YjJhY2M4ZTQ3ODg4OWRlYzkwYzJlNGNhNGIzZTFmNDdmNDg4ODJjMjM3NzY1OTMxN2VkZTA1ZWUzM2NkNiJdfQ.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwNiIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.Q9VESPh0b5Ekwh-lqV7qhJR46DA1dPrddEux1YgYHNxtcqLNIwU8CIilt3rkZzFuTIS6hDbmfjUu5e9UpjTOCQ",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0006",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-statement-altered",
+      "category": "signed-proof",
+      "description": "The proof that names one delegation, its protected header rewritten after signing to state another, beside that other delegation",
+      "expected": "fail",
+      "reason": "The protected header is part of the JWS signing input, so a statement changed without the holder's key breaks the signature",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjphY2Y5MGYyZDkwZDdiZmRiNDEzMTQxMGM5OTRmMzdlNmU4YTBmZWM2M2I5YmU0YjY3MDRhYWZiYjM2MDMzNGJiIn0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.7d0ujpv3h1AMMTKu08D3dFjTiMP-azkWTh9Get7z_hDtJvwytANXNn62KF8sr6i--XSzlxAx5FJtP4nX80hrAA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-write",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-write",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "cWaJP9PLb04obA9f1v-4GpNXjZxGp5vruuOvkqDpWyKgIif2d4zRwzFR2GGTfPk-GeozljaidY2-45iSN51TBg"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-statement-stripped",
+      "category": "signed-proof",
+      "description": "The proof that names one delegation, its protected header rewritten after signing to state nothing, beside another delegation",
+      "expected": "fail",
+      "reason": "A named proof cannot be made an unnamed one: removing the statement breaks the signature, whether or not the verifier requires naming",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiJ9.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwMSIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.7d0ujpv3h1AMMTKu08D3dFjTiMP-azkWTh9Get7z_hDtJvwytANXNn62KF8sr6i--XSzlxAx5FJtP4nX80hrAA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0001",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-write",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-write",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read",
+                  "records:write"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read",
+                    "records:write"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "cWaJP9PLb04obA9f1v-4GpNXjZxGp5vruuOvkqDpWyKgIif2d4zRwzFR2GGTfPk-GeozljaidY2-45iSN51TBg"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-statement-duplicated",
+      "category": "signed-proof",
+      "description": "Request proof signed over a protected header that holds the parameter twice, the first stating the credential presented and the last another",
+      "expected": "fail",
+      "reason": "Of header parameters that share a name a verifier reads the last or refuses the JWS (RFC 7515 §4), so the first never binds the proof",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpmNzliMmFjYzhlNDc4ODg5ZGVjOTBjMmU0Y2E0YjNlMWY0N2Y0ODg4MmMyMzc3NjU5MzE3ZWRlMDVlZTMzY2Q2Iiwib3JnLmt5YS1vcy9kZWxlZ2F0aW9uIjoic2hhMjU2OmFjZjkwZjJkOTBkN2JmZGI0MTMxNDEwYzk5NGYzN2U2ZThhMGZlYzYzYjliZTRiNjcwNGFhZmJiMzYwMzM0YmIifQ.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwNyIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.OtKz2smBwK-bpeFd936bXB2wyr3rYvDZbXI1wePd_vyQbK39pabFEiUzgL_kG10dz9uZsvXP8t71hAODZp0XDg",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0007",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "signed-proof/request-binding-payload-names-another",
+      "category": "signed-proof",
+      "description": "Request proof whose protected header states the credential presented and whose signed delegationRef names another",
+      "expected": "fail",
+      "reason": "A proof is held to every name of a delegation its signature covers, so one that also names another credential in its payload is refused",
+      "input": {
+        "proof": {
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuI3o2TWtnUlFqcmRxVTdoTVF2Q1IyRGFla3ppZUFoWnlQV1BSTk4yZGdyb3VWVnFSbiIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjpmNzliMmFjYzhlNDc4ODg5ZGVjOTBjMmU0Y2E0YjNlMWY0N2Y0ODg4MmMyMzc3NjU5MzE3ZWRlMDVlZTMzY2Q2In0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImRlbGVnYXRpb25SZWYiOiJ1cm46dXVpZDpkZWwtcmVjb3Jkcy13cml0ZSIsImlzcyI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwibm9uY2UiOiJub25jZS1yZXF1ZXN0LWJpbmRpbmctMDAwOCIsInJlcXVlc3RIYXNoIjoic2hhMjU2OjU3MWJmY2VhNzdlYWRlN2RiMjVmNjRlZTY4M2EyNmFhYmM4YTM3YjQ5ZWViM2U5MDk4NDA0OGI3YmM2MjQ4NzIiLCJzZXNzaW9uSWQiOiJzZXNzX3JlcXVlc3RfYmluZGluZyIsInN1YiI6ImRpZDprZXk6ejZNa2dSUWpyZHFVN2hNUXZDUjJEYWVremllQWhaeVBXUFJOTjJkZ3JvdVZWcVJuIiwidHMiOjE3NTAwMDAwMDB9.cXsQU4JHBw3XD2lIMBtu3tfjhiMTu3U4xKfrpx-01EHoerFywrCV14iAJbjYgvrD5m8ejfYKJG1ebsOsK6ijDA",
+          "meta": {
+            "did": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+            "ts": 1750000000,
+            "nonce": "nonce-request-binding-0008",
+            "audience": "did:web:server.example.com",
+            "sessionId": "sess_request_binding",
+            "requestHash": "sha256:571bfcea77eade7db25f64ee683a26aabc8a37b49eeb3e90984048b7bc624872",
+            "delegationRef": "urn:uuid:del-records-write"
+          }
+        },
+        "publicKeyJwk": {
+          "kty": "OKP",
+          "crv": "Ed25519",
+          "x": "HT4K9wP4DpdCUhmKpydmAY4DJn2i782BNop7_EtkF_0",
+          "kid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn#z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn"
+        },
+        "now": 1750000000,
+        "skewSeconds": 300,
+        "expected": {
+          "request": {
+            "method": "tools/call",
+            "params": {
+              "name": "records.read",
+              "arguments": {
+                "recordId": "r-1"
+              }
+            }
+          },
+          "presentedDelegation": {
+            "@context": [
+              "https://www.w3.org/2018/credentials/v1",
+              "https://schema.kya-os.org/v1/protocol/delegation/context/v1.0.0"
+            ],
+            "id": "urn:uuid:del-records-read",
+            "type": [
+              "VerifiableCredential",
+              "DelegationCredential"
+            ],
+            "issuer": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+            "issuanceDate": "2026-01-01T00:00:00.000Z",
+            "credentialSubject": {
+              "id": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+              "delegation": {
+                "id": "del-records-read",
+                "issuerDid": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+                "subjectDid": "did:key:z6MkgRQjrdqU7hMQvCR2DaekzieAhZyPWPRNN2dgrouVVqRn",
+                "scopes": [
+                  "records:read"
+                ],
+                "constraints": {
+                  "scopes": [
+                    "records:read"
+                  ],
+                  "audience": "did:web:server.example.com"
+                },
+                "status": "active",
+                "createdAt": 1750000000000
+              }
+            },
+            "proof": {
+              "type": "Ed25519Signature2020",
+              "created": "2026-01-01T00:00:00.000Z",
+              "verificationMethod": "did:key:z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP#z6MkoJVVCgsHzcUnj4VH7iDGq1oEKvvGcNYCoxMVnkejjsiP",
+              "proofPurpose": "assertionMethod",
+              "proofValue": "EpYcQsnZt-aokasrSzLCT94OAZhRInTLa8uPuJsPbXKFWJqUxfqLpA5eFk_1uBypC73ADKp4tm3KeBNt79JbBw"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

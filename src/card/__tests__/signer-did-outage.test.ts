@@ -27,6 +27,7 @@ import {
 import { AnsweringFetchProvider, safeFetchProvider, safeFetchServing } from '../../__tests__/utils/adopter-providers.js';
 import { keyOf } from '../../__tests__/utils/delegation-credentials.js';
 import { NOW_MS, RESOURCE, now, parties, serve, statusList, twoHopChain } from './signed-chain-helpers.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -67,10 +68,10 @@ const OUTAGES: [string, () => Promise<DIDResolver>, RefusalCode, string, string]
     'reports its host unavailable',
     async () => ({ resolve: async () => null, lastFailure: () => ({ cause: 'unavailable', detail: `HTTP 503 from ${ADDRESS}` }) }),
     'did_unavailable',
-    '',
-    '',
+    WITHHELD_SUFFIX,
+    `HTTP 503 from ${ADDRESS}`,
   ],
-  ['finds nothing and says no more', async () => ({ resolve: async () => null }), 'did_unavailable', '', ''],
+  ['finds nothing and says no more', async () => ({ resolve: async () => null }), 'did_unavailable', WITHHELD_SUFFIX, 'gave no cause'],
   [
     'throws',
     async () => ({
@@ -79,28 +80,28 @@ const OUTAGES: [string, () => Promise<DIDResolver>, RefusalCode, string, string]
       },
     }),
     'did_unavailable',
-    '',
+    WITHHELD_SUFFIX,
     ADDRESS,
   ],
   [
     'reports its host refused',
     async () => ({ resolve: async () => null, lastFailure: () => ({ cause: 'host_refused', detail: `${ADDRESS} refused` }) }),
     'host_refused',
-    '',
-    '',
+    WITHHELD_SUFFIX,
+    `${ADDRESS} refused`,
   ],
   [
     "reports a document that is not the DID's",
     async () => ({ resolve: async () => null, lastFailure: () => ({ cause: 'invalid_document', detail: 'names another DID as its id' }) }),
     'did_invalid',
-    '',
-    '',
+    WITHHELD_SUFFIX,
+    'names another DID as its id',
   ],
   [
     'reads a document over the byte cap from an internal host',
     async () => readingAs(INTERNAL, answering(() => Response.json({ id: INTERNAL, padding: 'x'.repeat(2 * 1024 * 1024) }))),
     'did_invalid',
-    '',
+    WITHHELD_SUFFIX,
     `${INTERNAL}: DID resolution byte limit exceeded`,
   ],
   [
@@ -110,7 +111,7 @@ const OUTAGES: [string, () => Promise<DIDResolver>, RefusalCode, string, string]
       return readingAs(INTERNAL, answering(() => Response.json(document)));
     },
     'did_invalid',
-    '',
+    WITHHELD_SUFFIX,
     'got did:web:other.example',
   ],
   [
@@ -125,14 +126,14 @@ const OUTAGES: [string, () => Promise<DIDResolver>, RefusalCode, string, string]
       return readingAs(INTERNAL, createDidWebResolver(safeFetchProvider(safeFetch)));
     },
     'did_unavailable',
-    '',
+    WITHHELD_SUFFIX,
     `resolves to the non-public address ${ADDRESS}`,
   ],
   [
     'reads, through SafeFetch, a document naming another DID from an internal host',
     async () => readingAs(INTERNAL, createDidWebResolver(safeFetchProvider(safeFetchServing({ [INTERNAL_URL]: await anotherDids() })))),
     'did_invalid',
-    '',
+    WITHHELD_SUFFIX,
     'got did:web:other.example',
   ],
   [

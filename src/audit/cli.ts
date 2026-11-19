@@ -6,14 +6,12 @@ import type { JWK } from 'jose';
 import { CryptoProviderAuditHasher } from './crypto.js';
 import { CompactJwsAuditSignatureVerifier } from './crypto.js';
 import { verifyAuditBundle } from './replay-bundle.js';
-import { parseAuditVerificationPolicy } from './schemas.js';
-import type {
-  AuditReplayBundleV1,
-  AuditVerificationPolicyV1,
-  SignerRef,
-} from './types.js';
+import { auditVerificationPolicySchema, parseAuditVerificationPolicy } from './schemas.js';
+import { AuditArtifactVerifier } from './verifier.js';
+import type { SignerRef } from './types.js';
 import { NodeCryptoProvider } from '../providers/node-crypto.js';
-import { z } from 'zod';
+import { sanitizeForMessage } from '../utils/message-text.js';
+import * as z from 'zod';
 
 interface AuditCliKeyFile {
   keys: Array<{ kid: string; jwk: JWK }>;
@@ -54,6 +52,41 @@ const defaultIo: AuditCliIo = {
 
 const usage = 'Usage: kya-audit verify <bundle.json> --policy <policy.json> --keys <keys.json>\n';
 
+/** The most UTF-16 code units of a failure the CLI prints. */
+const MAX_FAILURE_LENGTH = 1024;
+
+/**
+ * The JSON in the file at `path`. A file that is not JSON is reported in fixed
+ * words: the parser's message quotes the bytes around the error, and a bundle
+ * is a stranger's file, so those bytes never reach the terminal.
+ */
+async function readJson(io: AuditCliIo, path: string): Promise<unknown> {
+  let text: string;
+  try {
+    text = await io.readText(path);
+  } catch (error) {
+    throw new Error(`${path} could not be read: ${messageOf(error)}`);
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`${path} is not valid JSON`);
+  }
+}
+
+/** `value` as `schema` reads it, or a refusal said on one line as `<path> is not a valid <what>`. */
+function validAs<T>(path: string, what: string, schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (result.success) return result.data;
+  const issues = result.error.issues.map((issue) =>
+    issue.path.length === 0 ? issue.message : `${issue.path.join('.')}: ${issue.message}`);
+  throw new Error(`${path} is not a valid ${what}: ${issues.join('; ')}`);
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function option(args: readonly string[], name: string): string | undefined {
   const index = args.indexOf(name);
   if (index < 0 || args.indexOf(name, index + 1) >= 0) return undefined;
@@ -82,10 +115,11 @@ export async function runAuditCli(
 
   try {
     const [bundle, policy, keyFile] = await Promise.all([
-      io.readText(args[1]).then((value) => JSON.parse(value) as AuditReplayBundleV1),
-      io.readText(policyPath).then((value) =>
-        parseAuditVerificationPolicy(JSON.parse(value)) as AuditVerificationPolicyV1),
-      io.readText(keysPath).then((value) => auditCliKeyFileSchema.parse(JSON.parse(value))),
+      readJson(io, args[1]),
+      readJson(io, policyPath).then((value) => parseAuditVerificationPolicy(
+        validAs(policyPath, 'verification policy', auditVerificationPolicySchema, value))),
+      readJson(io, keysPath).then((value) =>
+        validAs(keysPath, 'key file', auditCliKeyFileSchema, value)),
     ]);
     const keys = new Map(keyFile.keys.map((item) => [item.kid, item.jwk]));
     const signatures = new CompactJwsAuditSignatureVerifier({
@@ -93,9 +127,16 @@ export async function runAuditCli(
         return keys.get(signer.kid) ?? null;
       },
     });
+    const hasher = new CryptoProviderAuditHasher(new NodeCryptoProvider());
+    // The present time, so a policy's constraints that need it (keys that must
+    // still be valid, how fresh an observation must be) are decided here and
+    // not left `indeterminate` behind an exit code of 0. It is read once, so
+    // every check of the run is made at the same instant.
+    const verifiedAt = Date.now();
     const report = await verifyAuditBundle(bundle, policy, {
-      hasher: new CryptoProviderAuditHasher(new NodeCryptoProvider()),
+      hasher,
       signatures,
+      artifacts: new AuditArtifactVerifier({ hasher, signatures, verifiedAt: () => verifiedAt }),
     });
     io.write(`${JSON.stringify(report, null, 2)}\n`);
     const dimensions = Object.values(report).filter((value): value is {
@@ -104,7 +145,11 @@ export async function runAuditCli(
     } => typeof value === 'object' && value !== null && 'verdict' in value);
     return dimensions.some((dimension) => dimension.verdict === 'invalid') ? 1 : 0;
   } catch (error) {
-    io.writeError(`Audit verification failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    // Every message is printed free of control characters: a schema's refusal
+    // quotes member names, and a file path or a dependency's error may hold any.
+    io.writeError(
+      `Audit verification failed: ${sanitizeForMessage(messageOf(error), MAX_FAILURE_LENGTH)}\n`,
+    );
     return 2;
   }
 }

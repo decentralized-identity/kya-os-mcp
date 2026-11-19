@@ -15,14 +15,19 @@ import { base64urlEncodeFromBytes } from '../../utils/base64.js';
 import { ed25519SignRaw, es256SignRaw } from './canonical.js';
 import type { Ed25519PrivateJwk, P256PrivateJwk, ProofSigner } from './types.js';
 
-/** Shared detached-JWS producer: `protectedHeader..signature` with the given `alg` + `kid` (DRY). */
+/**
+ * Shared detached-JWS producer: `protectedHeader..signature` with the given `alg` + `kid` (DRY), and
+ * the parameters a call hands it beside them, which replace neither.
+ */
 function detachedJwsSign(
   key: Awaited<ReturnType<typeof importJWK>>,
   alg: 'EdDSA' | 'ES256',
   kid: string,
-): (payload: Uint8Array) => Promise<string> {
-  return async (payload) => {
-    const flattened = await new FlattenedSign(payload).setProtectedHeader({ alg, kid }).sign(key);
+): ProofSigner['sign'] {
+  const own = { alg, kid };
+  return async (payload, protectedHeader = {}) => {
+    // `alg` and `kid` first, as they were, and never those of the parameters handed in.
+    const flattened = await new FlattenedSign(payload).setProtectedHeader({ ...own, ...protectedHeader, ...own }).sign(key);
     return `${flattened.protected ?? ''}..${flattened.signature}`;
   };
 }

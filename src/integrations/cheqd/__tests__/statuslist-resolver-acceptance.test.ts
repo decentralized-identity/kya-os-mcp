@@ -23,6 +23,8 @@ import type { AgentIdentity, FetchProvider } from '../../../providers/base.js';
 import { delegationRecord, resignedCredential, signedCredential } from '../../../__tests__/utils/delegation-credentials.js';
 import type { NodeCryptoProvider } from '../../../__tests__/utils/node-crypto-provider.js';
 import type { CredentialStatus } from '../../../types/protocol.js';
+import { withWarnings } from '../../../__tests__/utils/logged-lines.js';
+import { WITHHELD_SUFFIX } from '../../../utils/thrown-words.js';
 
 describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
   let crypto: NodeCryptoProvider;
@@ -370,11 +372,21 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
       }
     });
 
-    it('denies a credential whose list is not the pinned issuer’s as status_unresolvable', async () => {
+    it('denies a credential whose list is not the pinned issuer’s as status_unresolvable, telling the log why', async () => {
       served = await otherSetup.storage.getStatusList(clearEntry.statusListCredential);
-      const result = await verify(other, clearEntry);
+      const { result, logged } = await withWarnings(() => verify(other, clearEntry));
       expect(result).toMatchObject({ valid: false, stage: 'status', statusOutcome: 'status_unresolvable' });
-      expect(result.reason).toMatch(/does not keep this list's URL/);
+      expect(result.reason).toBe(`Status check error: the status list at "${clearEntry.statusListCredential}" could not be read or checked${WITHHELD_SUFFIX}`);
+      expect(logged).toMatch(/does not keep this list's URL/);
+    });
+
+    it('denies a credential whose list proof states another purpose, quoting it only to the log', async () => {
+      const stored = (await setup.storage.getStatusList(revokedEntry.statusListCredential)) as unknown as Record<string, unknown>;
+      served = { ...stored, proof: { ...(stored.proof as Record<string, unknown>), proofPurpose: 'authentication' } };
+      const { result, logged } = await withWarnings(() => verify(pinned, revokedEntry));
+      expect(result).toMatchObject({ valid: false, stage: 'status', statusOutcome: 'status_unresolvable' });
+      expect(result.reason).toBe(`Status check error: the status list at "${revokedEntry.statusListCredential}" could not be read or checked${WITHHELD_SUFFIX}`);
+      expect(logged).toContain('Proof purpose "authentication" is not assertionMethod');
     });
 
     it('denies a credential whose index it refuses with a bounded, well-formed reason', async () => {
@@ -391,13 +403,13 @@ describe('CheqdStatusListResolver and the status-list acceptance rule', () => {
       }
     });
 
-    it('denies a credential whose statusPurpose is not a string with the reason the resolver gives', async () => {
+    it('denies a credential whose statusPurpose is not a string, logging the reason the resolver gives', async () => {
       const named = JSON.parse('{"toString":"revocation"}') as CredentialStatus['statusPurpose'];
-      const result = await verify(pinned, { ...revokedEntry, statusPurpose: named });
+      const { result, logged } = await withWarnings(() => verify(pinned, { ...revokedEntry, statusPurpose: named }));
       expect(result).toMatchObject({ valid: false, stage: 'status', statusOutcome: 'status_unresolvable' });
-      expect(result.reason).toBe(
-        `Status check error: status list statusPurpose mismatch: the list's is "revocation" and the entry's is of type object`,
-      );
+      // The rule quotes the list's purpose, which no signature vouches for yet, so only the log is told it.
+      expect(result.reason).toBe(`Status check error: the status list at "${revokedEntry.statusListCredential}" could not be read or checked${WITHHELD_SUFFIX}`);
+      expect(logged).toContain(`status list statusPurpose mismatch: the list's is "revocation" and the entry's is of type object`);
     });
   });
 });

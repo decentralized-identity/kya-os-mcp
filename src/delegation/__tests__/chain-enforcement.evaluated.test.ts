@@ -1,11 +1,13 @@
 /**
  * The credentials validateDelegationChain reports it evaluated (SPEC.md
- * §7.8): the chain a proof binds, root first, ending where the walk stopped.
+ * §7.8): the chain a proof binds, root first. The presented credential is
+ * examined first, so it ends the list whenever the walk started.
  */
 import { describe, it, expect, vi } from "vitest";
 import { validateDelegationChain, type DelegationCredentialVerifierPort } from "../chain-enforcement.js";
 import type { DelegationCredential } from "../../types/protocol.js";
 import { SERVER, baseDeps, chainOfThree, cred, resolving } from "./helpers/chain-fixtures.js";
+import { WITHHELD_SUFFIX } from "../../utils/thrown-words.js";
 
 describe("validateDelegationChain: the credentials it reports", () => {
   const { root, middle, leaf } = chainOfThree();
@@ -26,7 +28,7 @@ describe("validateDelegationChain: the credentials it reports", () => {
     expect((await validateDelegationChain(root, baseDeps)).evaluated).toEqual([root]);
   });
 
-  it("end, on a refusal, with the credential the walk stopped at, so the caller can say what was examined", async () => {
+  it("are, on a refusal, the ancestors up to the one the walk stopped at, then the presented credential, so the caller can say what was examined", async () => {
     // Refused at the leaf: every credential was reached.
     const widened = cred({ id: "leaf", issuerDid: "did:sub", subjectDid: "did:tool", parentId: "middle", scopes: ["read", "delete"], audience: SERVER });
     const result = await validateDelegationChain(widened, resolving([root, middle]));
@@ -34,17 +36,22 @@ describe("validateDelegationChain: the credentials it reports", () => {
     expect(result.reason).toContain("widens scopes beyond parent middle");
     expect(result.evaluated).toEqual([root, middle, widened]);
 
-    // Refused at an ancestor: nothing after it was reached, the leaf included.
+    // Refused at an ancestor: no ancestor after it was reached, and the leaf, verified first, was.
     const failingAt = (refused: DelegationCredential): DelegationCredentialVerifierPort => ({
       verifyDelegationCredential: async (credential) =>
         credential === refused ? { valid: false, reason: "Signature verification failed" } : { valid: true },
     });
     const atMiddle = await validateDelegationChain(leaf, { ...resolving([root, middle]), verifier: failingAt(middle) });
     expect(atMiddle.valid).toBe(false);
-    expect(atMiddle.evaluated).toEqual([root, middle]);
+    expect(atMiddle.evaluated).toEqual([root, middle, leaf]);
     const atRoot = await validateDelegationChain(leaf, { ...resolving([root, middle]), verifier: failingAt(root) });
     expect(atRoot.valid).toBe(false);
-    expect(atRoot.evaluated).toEqual([root]);
+    expect(atRoot.evaluated).toEqual([root, leaf]);
+
+    // Refused at the leaf's own verification: no ancestor was examined.
+    const atLeaf = await validateDelegationChain(leaf, { ...resolving([root, middle]), verifier: failingAt(leaf) });
+    expect(atLeaf.valid).toBe(false);
+    expect(atLeaf.evaluated).toEqual([leaf]);
   });
 
   it("are every credential when the refusal comes after the walk: one of them is revoked", async () => {
@@ -78,10 +85,10 @@ describe("validateDelegationChain: the credentials it reports", () => {
     // A chain's links, and then its root's issuer, are checked before the walk starts.
     const unlinked = cred({ id: "middle", issuerDid: "did:rogue", subjectDid: "did:sub", parentId: "root", scopes: ["read"], audience: SERVER });
     const broken = await validateDelegationChain(leaf, resolving([root, unlinked]));
-    expect(broken.reason).toBe("Delegation middle issued by did:rogue but parent subject is did:agent");
+    expect(broken.reason).toBe(`Delegation "leaf" does not descend from a root through the chain its parent resolves to${WITHHELD_SUFFIX}`);
     expect(broken).not.toHaveProperty("evaluated");
     const untrusted = await validateDelegationChain(leaf, { ...resolving([root, middle]), trustedRootIssuers: ["did:other"] });
-    expect(untrusted.reason).toContain("which is not a trusted root issuer");
+    expect(untrusted.reason).toBe(`Delegation "leaf" descends from a root whose issuer is not a trusted root issuer${WITHHELD_SUFFIX}`);
     expect(untrusted).not.toHaveProperty("evaluated");
   });
 

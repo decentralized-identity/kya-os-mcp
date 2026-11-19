@@ -1,0 +1,12 @@
+kind: Fixed
+body: |-
+    **Removing a revoked delegation no longer erases its revocation.**
+    `removeDelegation` deleted whole a revoked delegation that had a status
+    list entry, as if the entry recorded the revocation. When the write of
+    its bit had failed, or left the list unchanged, the graph's mark was
+    the only record, so once it was removed `isRevoked` answered
+    `{ revoked: false }`. A removed delegation that reads as revoked now
+    always leaves a revoked record of its id, which refuses the id's
+    registration again. One that does not read as revoked is still removed
+    whole.
+time: 2026-11-19T00:30:00.000000-06:00

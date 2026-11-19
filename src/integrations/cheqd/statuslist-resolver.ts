@@ -40,6 +40,10 @@
  * not answer or whose proof does not verify, the resolution's code for an
  * issuer DID that could not be resolved, and `status_unavailable` otherwise,
  * a list outside its window included, with a reason that says when it ends or begins.
+ * A verdict about a list reaches the presenter only once the list's
+ * signature verifies, so a refusal that quotes the list or its proof before
+ * then, the acceptance rule's among them, is a `NetworkRefusalError`, whose
+ * words the delegation verifier gives to the operator's log alone.
  *
  * Freshness: an internal {@link TtlCache} holds the VERIFIED document
  * (default 10 s — one fetch amortizes across every credential on a list;
@@ -84,6 +88,7 @@ import { developmentMode } from '../../utils/development-mode.js';
 import { admittingPrivateHosts, type PrivateNetworkTransport } from '../../utils/private-network-rule.js';
 import { ed25519KeyBytes } from '../../utils/ed25519-public-key.js';
 import { RefusalError } from '../../utils/refusal.js';
+import { NetworkRefusalError } from '../../utils/thrown-words.js';
 import { TtlCache } from '../../utils/ttl-cache.js';
 import { cacheTtlOption } from '../../utils/cache-options.js';
 
@@ -221,7 +226,8 @@ export class CheqdStatusListResolver implements StatusListResolver {
       requireId: true,
     });
     if (!verdict.valid) {
-      throw new RefusalError('status_signer_untrusted', verdict.reason);
+      // Asked before the signature verifies, so the reason goes to the operator's log alone.
+      throw new NetworkRefusalError('status_signer_untrusted', verdict.reason);
     }
     if (!cached) {
       await this.assertSignature(credential);
@@ -292,9 +298,11 @@ export class CheqdStatusListResolver implements StatusListResolver {
     if (typeof proofValue !== 'string' || proofValue.length === 0) {
       throw new RefusalError('status_signer_untrusted', 'Status list proof is missing proofValue');
     }
+    // A verdict about the list reaches the presenter only once its signature verifies, so a
+    // refusal that quotes its proof before then goes to the operator's log alone.
     const purposeMismatch = proofPurposeMismatch(proof, ASSERTION_METHOD);
     if (purposeMismatch) {
-      throw new RefusalError('status_signer_untrusted', purposeMismatch);
+      throw new NetworkRefusalError('status_signer_untrusted', purposeMismatch);
     }
 
     // What the signature covers is what an embedded proof covers on any credential (SPEC.md
@@ -318,7 +326,7 @@ export class CheqdStatusListResolver implements StatusListResolver {
 
     const selection = selectAssertionMethod(didDoc, this.opts.expectedIssuerDid, named);
     if (!('method' in selection)) {
-      throw new RefusalError(
+      throw new NetworkRefusalError(
         'status_signer_untrusted',
         assertionMethodRefusal(selection, 'Status list proof verificationMethod', named, this.opts.expectedIssuerDid),
       );

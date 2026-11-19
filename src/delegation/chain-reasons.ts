@@ -10,15 +10,28 @@
  * operator's log, and the reason says only what failed.
  */
 
+import { logger } from "../logging/index.js";
 import { describeValue } from "../utils/describe-value.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { refusal, type Refusal } from "../utils/refusal.js";
-import { readRevocationAnswer, WRAPPED_REASON_LENGTH } from "../utils/revocation-answer.js";
-import { thrownReason } from "../utils/thrown-words.js";
+import { OPERATOR_REASON_LENGTH, readRevocationAnswer, WRAPPED_REASON_LENGTH } from "../utils/revocation-answer.js";
+import { thrownReason, WITHHELD_SUFFIX } from "../utils/thrown-words.js";
 
 /** `opening`, then the words of `error` where they may be shown, or else `failed`, with the words logged. */
 function thrownByHost(error: unknown, opening: string, failed: string): string {
   return thrownReason(error, { withheld: `${opening}: ${failed}`, shown: (words) => `${opening}: ${words}`, tag: "[kya-os]" });
+}
+
+/**
+ * `said`, the reason a refusal gives whoever presented the delegation, ending with
+ * {@link WITHHELD_SUFFIX} once the operator's log is told what it withholds there: `withheld`, a
+ * reason that names what the chain resolver answered. Both halves of the line hold text the
+ * presenter wrote before any signature was checked, so the line is written through
+ * `sanitizeForMessage`, free of any character that would rewrite the log.
+ */
+export function presentedReason(said: string, withheld: string): string {
+  logger.warn(`[kya-os] ${sanitizeForMessage(said)}: ${sanitizeForMessage(withheld, OPERATOR_REASON_LENGTH)}`);
+  return `${said}${WITHHELD_SUFFIX}`;
 }
 
 /** Why a chain is refused when its resolver threw `error`. */

@@ -5,7 +5,12 @@
  * verified, that URL is only what whoever presented the chain wrote, so a read of it is held to the
  * private-network rule as any URL a presenter names is. Once the proof has verified, the root the
  * verifier pins has named it, so the read is the operator's own, as a URL `statusListIssuers` binds
- * is, and its host may be private.
+ * is, and its host may be private, but only where that host is the root's own: the https origin,
+ * host and port, its did:web DID names, from which its DID document is read. A root's word reaches
+ * no further than its own host, so a list it names on any other private host, and every list of a
+ * root with no host of its own, such as a did:key root, is held to the rule unless the operator
+ * binds it in `statusListIssuers`. The port counts, as it does in an origin binding: one machine
+ * serves each party on a port of its own, and a root at one port does not speak for another.
  *
  * Only the library marks a context, and only after that proof: `evaluateDelegationChain` once
  * `verifyHopProof` has passed for every hop, `verifyRequestDelegation` once its hop proofs have, and
@@ -18,8 +23,9 @@
  * a redirect from it to any other URL is held as one a presenter named.
  */
 
+import { parseDidWeb } from '../delegation/did-web-url.js';
 import { operatorNamedRequests } from './operator-named.js';
-import { statusListIssuersBind, type StatusCheckContext, type StatusListIssuers } from './statuslist-keeper.js';
+import { originBindingOf, statusListIssuersBind, type StatusCheckContext, type StatusListIssuers } from './statuslist-keeper.js';
 
 declare const VERIFIED_ROOT: unique symbol;
 
@@ -81,9 +87,10 @@ export function verifiedRootContext<T extends RootNaming>(context: T): T {
 /**
  * Which requests of the read of the status list at `url` are the operator's own, request by request,
  * the first and each redirect (`./operator-named`): one for a URL `statusListIssuers` binds, and one
- * for the URL a pinned root's own credential names, when that URL is https and `context` carries a
- * mark this module made for that root and that URL. Any other request is one a presenter named.
- * `undefined` when no request can be the operator's, so the read is held as a presenter's whole.
+ * for the URL a pinned root's own credential names, when that URL is at the root's own did:web
+ * origin and `context` carries a mark this module made for that root and that URL. Any other request
+ * is one a presenter named. `undefined` when no request can be the operator's, so the read is held
+ * as a presenter's whole.
  *
  * A read takes http only at a URL its operator named as written, and the operator writes only what
  * `statusListIssuers` binds: the root's credential, not the operator, names the root's own list, so
@@ -94,7 +101,7 @@ export function operatorNamedHops(
   context: StatusCheckContext | undefined,
   statusListIssuers?: StatusListIssuers,
 ): ((request: string) => boolean) | undefined {
-  const rootList = httpsOnly(verifiedRootList(context));
+  const rootList = onOwnHost(verifiedRootList(context), context?.trustedRootIssuer);
   if (rootList === undefined && statusListIssuers === undefined) return undefined;
   return operatorNamedRequests(
     url,
@@ -102,14 +109,15 @@ export function operatorNamedHops(
   );
 }
 
-/** `url` when it is an https URL, and `undefined` otherwise. */
-function httpsOnly(url: string | undefined): string | undefined {
-  if (url === undefined) return undefined;
-  try {
-    return new URL(url).protocol === 'https:' ? url : undefined;
-  } catch {
-    return undefined;
-  }
+/**
+ * `url` when it is an https URL at the origin the did:web DID `root` names, `https://` and its host
+ * with the port it writes, as an origin binding is written (`./statuslist-keeper`), and `undefined`
+ * otherwise: for any other URL, and for a root that is no did:web DID, which names no host.
+ */
+function onOwnHost(url: string | undefined, root: string | undefined): string | undefined {
+  if (url === undefined || root === undefined) return undefined;
+  const host = parseDidWeb(root)?.domain;
+  return host !== undefined && originBindingOf(url) === `https://${host}` ? url : undefined;
 }
 
 /** The URL a pinned root's own credential names, when `context` carries this module's mark for that root and that URL. */

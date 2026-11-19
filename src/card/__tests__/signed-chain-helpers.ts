@@ -18,6 +18,9 @@ import {
   type DelegationCredential,
 } from '../delegation.js';
 import type { SafeFetch } from '../../utils/safe-fetch.js';
+import { createDidKeyResolver } from '../../delegation/did-key-resolver.js';
+import type { DIDResolver } from '../../delegation/vc-verifier.types.js';
+import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 
 export const NOW_MS = Date.parse('2026-11-04T00:00:00Z');
 /** The clock every verifier and checker in these tests is given: it always reads {@link NOW_MS}. */
@@ -45,6 +48,25 @@ export function identity(): TestIdentity {
     privateKey,
     publicJwk: { kty: 'OKP', crv: 'Ed25519', x: pub.x },
     privateJwk: { kty: 'OKP', crv: 'Ed25519', x: priv.x, d: priv.d },
+  };
+}
+
+/** An Ed25519 key published as the verification method `<did>#key-1` of the did:web DID `did`. */
+export function webIdentity(did: string): TestIdentity {
+  return { ...identity(), did, method: `${did}#key-1` };
+}
+
+/**
+ * A resolver that serves the DID document of each identity in `web`, read when a DID is resolved,
+ * naming its key for assertions, and resolves any did:key DID as `createDidKeyResolver` does.
+ */
+export function resolverServing(web: readonly TestIdentity[]): DIDResolver {
+  const didKeys = createDidKeyResolver();
+  return {
+    resolve: async (did) => {
+      const party = web.find((identity) => identity.did === did);
+      return party ? issuerDidDocument(methodOf(published(party))) : didKeys.resolve(did);
+    },
   };
 }
 
@@ -106,6 +128,8 @@ export interface HopOptions {
   validUntil?: string;
   /** Sign with this identity instead of the issuer (to forge a hop). */
   signer?: TestIdentity;
+  /** The `parentCredentialDigest` the hop states; omitted means it states none. */
+  parentCredentialDigest?: unknown;
 }
 
 /** One signed §6.10 hop. */
@@ -122,6 +146,7 @@ export function hop(opts: HopOptions): DelegationCredential {
       invocationTarget: opts.invocationTarget ?? RESOURCE,
       allowedAction: opts.allowedAction,
       ...(opts.caveats ? { caveats: opts.caveats } : {}),
+      ...(opts.parentCredentialDigest === undefined ? {} : { parentCredentialDigest: opts.parentCredentialDigest }),
     },
     ...(opts.statusIndex !== undefined
       ? {

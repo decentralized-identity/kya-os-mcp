@@ -121,7 +121,8 @@ export interface HopTerms {
   /** The root's is the resource itself; any other hop's is its parent's `id`. */
   parentCapability: string;
   allowedAction: string[];
-  credentialStatus?: RevocationEntry;
+  /** The hop's status entry: a {@link RevocationEntry}, or the entry a status list manager allocated. */
+  credentialStatus?: CardDelegationCredential['credentialStatus'];
   /** When the hop starts to be valid, as the issuer writes it; none when left out. */
   validFrom?: string;
 }

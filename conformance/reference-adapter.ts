@@ -15,6 +15,7 @@ import {
   DelegationCredentialVerifier,
   createDidKeyResolver,
   createDidWebResolver,
+  generateDidKeyFromBase64,
   MemoryNonceCacheProvider,
   parseExtensionSettings,
   parseVCJWT,
@@ -25,7 +26,10 @@ import {
   acceptStatusList,
   RefusalError,
   statusListExpectationFor,
+  verifyDelegatedCallProof,
   type DelegationCredential,
+  type DetachedProof,
+  type ReceivedCredential,
   type StatusCheckContext,
   type StatusList2021Credential,
 } from '../src/index.js';
@@ -173,6 +177,9 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
         ? await verifier.fetchPublicKeyFromDID(proof.meta.did, input.keyId)
         : input.publicKeyJwk as Ed25519JWK;
       if (!key) return fail('no assertionMethod key');
+      if (!('didDocuments' in input) && input.expected !== undefined && 'presentedDelegation' in input.expected) {
+        return await this.verifyRequestProof(input, input.expected, verifier);
+      }
       const result = await verifier.verifyProof(
         input.proof as Parameters<ProofVerifier['verifyProof']>[0],
         key,
@@ -185,6 +192,28 @@ export class ReferenceConformanceAdapter implements ConformanceAdapter {
     } catch (error) {
       return fail(`verifySignedProof threw: ${asMessage(error)}`);
     }
+  }
+
+  /**
+   * A holder's request proof, held to the delegation its call presented (SPEC.md §7.8, suite
+   * 1.13.0 or later). The holder is the did:key of the key the vector gives, so a proof of any
+   * other key is not bound.
+   */
+  private async verifyRequestProof(
+    input: SignedProofInput,
+    expected: NonNullable<SignedProofInput['expected']>,
+    proofVerifier: ProofVerifier,
+  ): Promise<AdapterResult> {
+    const result = await verifyDelegatedCallProof({
+      proof: input.proof as DetachedProof,
+      subjectDid: generateDidKeyFromBase64(Buffer.from(input.publicKeyJwk.x, 'base64url').toString('base64')),
+      request: expected.request as ToolRequest,
+      proofVerifier,
+      presented: expected.presentedDelegation as ReceivedCredential | null,
+      ...(expected.requestBinding === undefined ? {} : { mode: expected.requestBinding }),
+      hash: (bytes) => this.crypto.hash(bytes),
+    });
+    return result.status === 'bound' ? PASS : fail(result.cause ?? result.reason ?? 'request proof not bound');
   }
 
   async verifyDelegationChain(input: DelegationChainInput): Promise<AdapterResult> {

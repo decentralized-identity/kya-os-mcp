@@ -33,6 +33,7 @@ import { DATE_TIME_FORM, dateLte, parseDateTime } from '../utils/rfc3339.js';
 import { windowBreach } from '../utils/validity-window.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import type { Caveat, DelegationChain } from './delegation.js';
+import { hopEnds } from './hop-window.js';
 
 /** A call as a caveat is held to it: what it spends, and when, with the clock tolerance to read dates with. */
 export interface HeldCall {
@@ -287,10 +288,11 @@ export interface EffectiveCaveats {
   /**
    * Every limit the chain states, at its tightest: the lowest `MaxAmount` of each currency it names
    * and the lowest of those that name none, the earliest `ValidUntil`, and each caveat the library
-   * does not interpret, once, as written, in the order each first appears, root to leaf. The hops'
-   * own `validUntil` count as `ValidUntil` caveats read after every caveat the hops state, so the
-   * earliest of them stands in for a later `ValidUntil`, or is added when no hop states one, and a
-   * verdict kept for later is still held to the chain's expiry. Every one applies to every call. A
+   * does not interpret, once, as written, in the order each first appears, root to leaf. The ends
+   * the hops state, each one's `validUntil`, `expirationDate` and proof `expires`, count as
+   * `ValidUntil` caveats read after every caveat the hops state, so the earliest of them stands in
+   * for a later `ValidUntil`, or is added when no hop states one, and a verdict kept for later is
+   * still held to the chain's expiry. Every one applies to every call. A
    * `MaxAmount` that names a currency also requires the call to be in that currency, so two in
    * different currencies permit no call, and one that names none limits the amount whatever its
    * currency. A looser duplicate in one hop never shows here. The library has held the call to each
@@ -310,14 +312,15 @@ export interface EffectiveCaveats {
 
 /**
  * The caveats `chain` grants under, its hops' caveats read as `hops`, root to leaf: the tightest of
- * them by group ({@link tightestOf}), each in the order its group first appears, then the `validUntil`
- * of each hop that states a date, read as a `ValidUntil` caveat.
+ * them by group ({@link tightestOf}), each in the order its group first appears, then each end a hop
+ * states as a date (`./hop-window.ts`), its `validUntil`, its `expirationDate` and its proof's
+ * `expires`, read as a `ValidUntil` caveat.
  */
 export function effectiveCaveatsOf(chain: DelegationChain, hops: readonly HopCaveats[]): Required<EffectiveCaveats> {
   const groups = new Map<GroupKey, Read>();
   for (const hop of hops) for (const entry of hop) keepTighter(groups, entry);
-  for (const { validUntil } of chain) {
-    if (parseDateTime(validUntil) !== undefined) keepTighter(groups, readOf({ type: 'ValidUntil', date: validUntil }));
+  for (const { stated } of chain.flatMap(hopEnds)) {
+    if (typeof stated === 'string' && parseDateTime(stated) !== undefined) keepTighter(groups, readOf({ type: 'ValidUntil', date: stated }));
   }
   // A malformed caveat refuses the chain (malformedCaveatRules) and may nest too deep to write out,
   // so the verdict leaves it out: a host can log a refused verdict whole.

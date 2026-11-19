@@ -149,9 +149,12 @@ describe("DelegationGraphManager", () => {
         issuerDid: "did:web:example.com:issuer",
         subjectDid: "did:web:example.com:subject",
       };
+      // The parent stands when registration reads it, and again in its turn, then is gone when the
+      // child is linked under it.
       vi.mocked(storage.getNode)
         .mockResolvedValueOnce(parent)
-        .mockResolvedValueOnce(null);
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(parent);
 
       await expect(
         graph.registerDelegation({

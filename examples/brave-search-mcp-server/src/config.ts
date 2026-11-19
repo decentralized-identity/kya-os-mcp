@@ -1,7 +1,7 @@
 import { LoggingLevel, LoggingLevelSchema } from '@modelcontextprotocol/sdk/types.js';
 import { Command } from 'commander';
 import dotenv from 'dotenv';
-import { z } from 'zod';
+import * as z from 'zod';
 import tools from './tools/index.js';
 
 dotenv.config({ debug: false, quiet: true });

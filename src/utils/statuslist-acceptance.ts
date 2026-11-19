@@ -33,7 +33,9 @@
  *
  * The rule is pure and checks no proof. It means something only together with a proof verified under
  * a key the list's `issuer` lists under `assertionMethod`: until then, every field it reads, the
- * `issuer` it decides by included, is whatever the server wrote.
+ * `issuer` it decides by included, is whatever the server wrote. A verdict about a list reaches the
+ * presenter only once the list's proof verifies, so a reader that asks the rule before the proof
+ * refuses with a `NetworkRefusalError` (`./thrown-words.ts`), and its reason goes to the operator's log.
  */
 
 import { describeValue } from './describe-value.js';
@@ -45,6 +47,7 @@ import {
   type StatusListIssuers,
   type StatusListKeeper,
 } from './statuslist-keeper.js';
+import { statusListFormatOf } from './statuslist-format.js';
 
 export {
   assertStatusListIssuers,
@@ -213,14 +216,14 @@ function keeperRejection(issuer: string | undefined, keeper: StatusListKeeper): 
  * "The value of the purpose property of the status entry, statusPurpose, MUST be one or more
  * strings." Verifiable Credentials Status List v2021 §2.2 has its lists state one: "The purpose of
  * the status entry MUST be a string." So a list may state an array only when it is typed as a
- * Bitstring Status List in both places; any other list, a StatusList2021 list or one typed as a
- * Bitstring Status List in one place alone, is in no data model that gives an array a meaning, and
- * is refused whatever its array holds.
+ * Bitstring Status List in both places, as {@link statusListFormatOf} reads them; any other list, a
+ * StatusList2021 list or one typed as a Bitstring Status List in one place alone, is in no data
+ * model that gives an array a meaning, and is refused whatever its array holds.
  */
 function purposeRejection(list: Record<string, unknown>, statusPurpose: string): string | undefined {
   const subject: Record<string, unknown> = isRecord(list.credentialSubject) ? list.credentialSubject : {};
   const declared = subject.statusPurpose;
-  if (Array.isArray(declared) && !isBitstringStatusList(list.type, subject.type)) {
+  if (Array.isArray(declared) && statusListFormatOf(list) !== 'BitstringStatusList') {
     return (
       'status list statusPurpose is an array, which only a BitstringStatusListCredential with a ' +
       `BitstringStatusList subject may state (the entry's is ${describeValue(statusPurpose)})`
@@ -237,15 +240,6 @@ function purposeRejection(list: Record<string, unknown>, statusPurpose: string):
     );
   }
   return undefined;
-}
-
-/**
- * Whether a list is typed as a Bitstring Status List v1.0 list in both places its §2.2 names, each
- * as that section states it: a `type` array that includes `BitstringStatusListCredential`, and a
- * subject whose `type` is the string `BitstringStatusList`.
- */
-function isBitstringStatusList(type: unknown, subjectType: unknown): boolean {
-  return Array.isArray(type) && type.includes('BitstringStatusListCredential') && subjectType === 'BitstringStatusList';
 }
 
 /**

@@ -9,7 +9,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { z } from 'zod';
+import * as z from 'zod';
 import { withKyaOs, generateIdentity } from '../../middleware/with-kya-os-server.js';
 import { NodeCryptoProvider } from '../utils/node-crypto-provider.js';
 import { KYA_OS_PROOF_META_KEY } from '../../proof/index.js';

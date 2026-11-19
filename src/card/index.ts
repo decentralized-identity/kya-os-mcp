@@ -46,6 +46,14 @@ export * from './status-list-proof.js';
 export type { EddsaJcs2022Proof } from './data-integrity.js';
 export * from './delegation-proof.js';
 export * from './request-delegation.js';
+export type { RequestBinding } from './request-binding.js';
+// The delegation a request proof states, and how a proof that names none is taken (SPEC.md §7.8).
+export {
+  DELEGATION_HEADER_PARAMETER,
+  NO_DELEGATION,
+  type RequestBindingMode,
+  type StatedDelegation,
+} from '../delegation/stated-delegation.js';
 
 // The codes the card's refusals carry beside their reasons.
 export { REFUSAL_CODES, isRefusalCode, isTransientRefusal, type RefusalCode } from '../refusal-codes.js';

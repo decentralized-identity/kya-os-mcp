@@ -49,7 +49,8 @@ let serial = 0;
 
 /**
  * One hop: `from` delegates `scopes` to `to`, under `parent` when it
- * re-delegates. Each hop has an id of its own unless it is given one.
+ * re-delegates, stating that parent's digest when `commits` is set. Each hop
+ * has an id of its own unless it is given one.
  */
 export function delegate(
   from: Party,
@@ -57,11 +58,13 @@ export function delegate(
   options: {
     scopes?: string[];
     parent?: DelegationCredential;
+    commits?: boolean;
     audience?: string;
     id?: string;
     metadata?: Record<string, unknown>;
   } = {},
 ): Promise<DelegationCredential> {
+  const issued = options.commits && options.parent ? { parent: options.parent } : {};
   return from.issuer.createAndIssueDelegation({
     id: options.id ?? `del-${(serial += 1)}`,
     issuerDid: from.did,
@@ -73,5 +76,17 @@ export function delegate(
       notAfter: Math.floor(Date.now() / 1000) + 3600,
     },
     ...(options.metadata !== undefined ? { metadata: options.metadata } : {}),
-  });
+  }, issued);
+}
+
+/**
+ * `original` issued again by `issuer`, its own issuer, under the same credential id and the same
+ * delegation id, granting `scopes`: another credential that every name of the first also names.
+ */
+export function reissued(issuer: Party, original: DelegationCredential, { scopes }: { scopes: string[] }): Promise<DelegationCredential> {
+  const { id, issuerDid, subjectDid, parentId, constraints } = original.credentialSubject.delegation;
+  return issuer.issuer.createAndIssueDelegation(
+    { id, issuerDid, subjectDid, ...(parentId === undefined ? {} : { parentId }), constraints: { ...constraints, scopes } },
+    { id: original.id },
+  );
 }

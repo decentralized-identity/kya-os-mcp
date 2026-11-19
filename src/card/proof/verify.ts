@@ -15,15 +15,22 @@
  * → NOW (±skew), the detached JWS → the covered claims, and the `cnf.jkt` fusion
  * (`token.cnf.jkt === proof.cnf.jkt === thumbprint(resolve(kid))`). Any failure appends a reason;
  * `ok` is true iff there are none.
+ *
+ * A proof also states, in the JWS protected header its signature covers, the delegation its call
+ * presents (SPEC.md §7.8). The statement is read from the header that verified and returned for the
+ * delegation check to hold the chain to; one that is neither a credential digest nor `none` is
+ * refused here.
  */
 
 import { calculateJwkThumbprint, flattenedVerify, importJWK } from 'jose';
 import type { JWK } from 'jose';
+import { statedDelegationOf, type StatedDelegation } from '../../delegation/stated-delegation.js';
 import { answerWithinDeadline, dependencyTimeout } from '../../utils/deadline.js';
 import { base64urlDecodeToString, base64urlEncodeFromBytes } from '../../utils/base64.js';
 import type { ToolRequest } from '../../proof/generator.js';
 import { nonceRetentionSeconds } from '../../providers/nonce-retention.js';
 import { isSmallOrderEd25519CryptoKey } from '../../utils/ed25519-public-key.js';
+import { isRecord } from '../../utils/guards.js';
 import type { ProofPublicJwk } from '../schema.js';
 import { canonicalPayloadBytes, computeRequestHash } from './canonical.js';
 import {
@@ -71,7 +78,11 @@ export async function verifyCardProof(
   if (meta.audience !== deps.expectedAudience) reasons.push('audience_mismatch');
   if (meta.requestHash !== computedHash) reasons.push('request_hash_mismatch');
   checkWindow(meta, deps, reasons);
-  if (key && algOk && !(await verifyDetachedJws(meta, key))) reasons.push('invalid_signature');
+  const header = key && algOk ? await verifiedHeader(meta, key) : undefined;
+  if (key && algOk && header === undefined) reasons.push('invalid_signature');
+  // What the proof states of its delegation, from the header the signature just verified over.
+  const statedDelegation: StatedDelegation = statedDelegationOf(header);
+  if (statedDelegation.kind === 'malformed') reasons.push('delegation_statement_malformed');
 
   const warnings: string[] = [];
   let level: ProofAssurance = 'L3-minus';
@@ -84,7 +95,7 @@ export async function verifyCardProof(
   const ok = reasons.length === 0;
   const withWarnings = warnings.length > 0 ? { warnings } : {};
   return ok
-    ? { ok, reasons, level, did: meta.did, ...withWarnings }
+    ? { ok, reasons, level, did: meta.did, ...withWarnings, statedDelegation }
     : { ok, reasons, ...withWarnings };
 }
 
@@ -187,21 +198,22 @@ function checkWindow(meta: CardProofMeta, deps: VerifyProofDeps, reasons: string
 }
 
 /**
- * Verify the DETACHED JWS over the reconstructed covered claims. The header is NOT trusted: its `alg`
+ * Verify the DETACHED JWS over the reconstructed covered claims, and return the protected header it
+ * verified over, or `undefined` when it does not verify. The header is NOT trusted: its `alg`
  * MUST equal the (schema-allow-listed `EdDSA`|`ES256`, and signed) `meta.alg`, and its `kid` MUST equal
  * `meta.kid`. Verification is PINNED to that single alg — never negotiated. The payload is recomputed
  * from the meta (JCS), so any tampered covered field (including `alg`) yields a different signing input.
  */
-async function verifyDetachedJws(meta: CardProofMeta, key: ProofPublicJwk): Promise<boolean> {
+async function verifiedHeader(meta: CardProofMeta, key: ProofPublicJwk): Promise<Record<string, unknown> | undefined> {
   const parts = meta.jws.split('.');
-  if (parts.length !== 3 || parts[1] !== '') return false;
+  if (parts.length !== 3 || parts[1] !== '') return undefined;
   const [protectedB64, , signatureB64] = parts;
   const header = decodeHeader(protectedB64);
-  if (!header || header.alg !== meta.alg || header.kid !== meta.kid) return false;
+  if (!header || header.alg !== meta.alg || header.kid !== meta.kid) return undefined;
   try {
     const pub = await importJWK(toJwk(key), meta.alg);
     // jose verifies under a small-order Ed25519 key, where one signature fits every payload.
-    if (await isSmallOrderEd25519CryptoKey(pub)) return false;
+    if (await isSmallOrderEd25519CryptoKey(pub)) return undefined;
     await flattenedVerify(
       {
         protected: protectedB64,
@@ -211,9 +223,9 @@ async function verifyDetachedJws(meta: CardProofMeta, key: ProofPublicJwk): Prom
       pub,
       { algorithms: [meta.alg] },
     );
-    return true;
+    return header;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -266,11 +278,12 @@ async function checkCnfFusion(
   return meta.cnf.jkt === keyJkt ? 'L3' : 'L3-minus';
 }
 
-/** Decode a base64url JWS protected header to `{ alg, kid }`, or null on malformed input. */
-function decodeHeader(b64: string | undefined): { alg?: string; kid?: string } | null {
+/** Decode a base64url JWS protected header to its JSON object, or null on malformed input. */
+function decodeHeader(b64: string | undefined): Record<string, unknown> | null {
   if (!b64) return null;
   try {
-    return JSON.parse(base64urlDecodeToString(b64)) as { alg?: string; kid?: string };
+    const header: unknown = JSON.parse(base64urlDecodeToString(b64));
+    return isRecord(header) ? header : null;
   } catch {
     return null;
   }

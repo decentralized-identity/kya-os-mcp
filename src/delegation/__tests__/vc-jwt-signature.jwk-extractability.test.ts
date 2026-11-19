@@ -1,0 +1,46 @@
+/**
+ * A VC-JWT issuer's key published as a JWK, whatever its `ext` member says. Under a small-order
+ * Ed25519 key one signature verifies every payload, so the envelope check reads the imported key
+ * back to refuse one. A JWK may carry `"ext": false`, which an import honours by making the key
+ * non-extractable, and such a key cannot be read back: the check must run on it all the same.
+ */
+import { describe, expect, it } from 'vitest';
+import { verifyVcJwtSignature } from '../vc-jwt-verify.js';
+import type { DIDResolver, VerificationMethod } from '../vc-verifier.types.js';
+import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
+import { keyOf, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
+import { forgedJws, IDENTITY } from '../../__tests__/utils/small-order.js';
+import { generateDidKeyFromBytes } from '../../utils/did-helpers.js';
+
+/** A resolver whose document publishes `method` with its JWK's `ext` member as `extractability` says. */
+function publishing(method: VerificationMethod, extractability: { ext?: boolean }): DIDResolver {
+  const published = { ...method, publicKeyJwk: { ...(method.publicKeyJwk as Record<string, unknown>), ...extractability } };
+  return { resolve: async () => issuerDidDocument(published as VerificationMethod) };
+}
+
+describe.each([
+  ['says nothing of extractability', {}],
+  ['says it is extractable', { ext: true }],
+  ['says it is not extractable', { ext: false }],
+])('a VC-JWT issuer key whose JWK %s', (_case, extractability) => {
+  it('is refused when it is a small-order point', async () => {
+    const did = generateDidKeyFromBytes(IDENTITY);
+    const kid = `${did}#key-1`;
+    const resolver = publishing(methodOf({ did, kid, publicKey: Buffer.from(IDENTITY).toString('base64') }), extractability);
+    const payload = JSON.stringify({ iss: did, vc: { credentialSubject: { scopes: ['admin:*'] } } });
+    const forged = forgedJws({ alg: 'EdDSA', kid }, payload);
+
+    const result = await verifyVcJwtSignature(forged, did, kid, resolver);
+
+    expect(result).toMatchObject({ valid: false, reason: 'Verification method key is a small-order Ed25519 point' });
+  });
+
+  it('verifies what the issuer signed when it is a sound key', async () => {
+    const issuer = await keyOf('did:web:issuer.example', 'key-1');
+    const jwt = await signedJwt(issuer, { kid: issuer.kid });
+
+    const result = await verifyVcJwtSignature(jwt, issuer.did, issuer.kid, publishing(methodOf(issuer), extractability));
+
+    expect(result.valid).toBe(true);
+  });
+});

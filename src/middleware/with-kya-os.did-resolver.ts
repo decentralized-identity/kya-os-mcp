@@ -16,7 +16,7 @@
  * a resolver `delegation.didResolvers` configures, to name its method in the log.
  */
 
-import { DidResolutionFailures, reportedFailure, unservedMethod } from "../delegation/did-resolution-failure.js";
+import { DidResolutionFailures, loggedFailure, reportedFailure, unservedMethod } from "../delegation/did-resolution-failure.js";
 import type { DIDDocument, DIDResolver, DidResolutionFailure } from "../delegation/vc-verifier.js";
 import { logger } from "../logging/index.js";
 import { describeValue } from "../utils/describe-value.js";
@@ -123,5 +123,5 @@ export function createGateDidResolver(resolvers: GateDidResolvers): DIDResolver 
 function configuredResolverThrew(method: string | null, did: string, error: unknown): DidResolutionFailure {
   const resolver = `DID resolver delegation.didResolvers configures for ${describeValue(method)}`;
   logger.warn(`[kya-os] The ${resolver} threw resolving ${describeValue(did)}: ${loggedWords(error)}`);
-  return { cause: "unavailable", detail: `The ${resolver} threw; its error is logged` };
+  return loggedFailure({ cause: "unavailable", detail: `The ${resolver} threw; its error is logged` });
 }

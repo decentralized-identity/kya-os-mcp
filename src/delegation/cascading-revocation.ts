@@ -15,16 +15,24 @@ import {
   restoreLeftUnchanged,
   revocationLeftUnchanged,
   revocationNotRecorded,
+  revocationStalled,
   type UnchangedStatusEntry,
   type UnrecordedRevocation,
 } from './status-entry-unchanged-error.js';
 import { StatusList2021Manager } from './statuslist-manager.js';
 import { readRevoked, unreadableStatusReason } from '../utils/revocation-answer.js';
+import { describeValue } from '../utils/describe-value.js';
+import { RefusalError } from '../utils/refusal.js';
+import { graphChainBreak } from './graph-chain.js';
+import { isStalledTurn } from './graph-node-turns.js';
 
 export {
+  RevocationStalledError,
   StatusEntryUnchangedError,
+  type RevocationReports,
   type StatusEntryUnchangedReason,
   type UnchangedStatusEntry,
+  type UnrecordedRevocation,
 } from './status-entry-unchanged-error.js';
 
 export interface RevocationEvent {
@@ -59,6 +67,8 @@ interface RevocationWalk {
   readonly events: RevocationEvent[];
   readonly unchanged: UnchangedStatusEntry[];
   readonly unrecorded: UnrecordedRevocation[];
+  /** The delegations the walk could not mark, since their node's turn did not come. */
+  readonly stalled: string[];
   readonly dryRun: boolean;
 }
 
@@ -87,8 +97,10 @@ interface EntryOutcome {
  *
  * A revocation never stops part way for an entry: every delegation of the subtree is marked in the
  * graph, and an entry it may not change, that cannot be read, or that the status list manager
- * could not change, is reported to the operator at the end in a `StatusEntryUnchangedError`, never
- * in a `RefusalError`.
+ * could not change, is reported to the operator at the end in a `StatusEntryUnchangedError`, which
+ * is not a `RefusalError`. When the walk also could not mark a delegation, since its node's turn did
+ * not come, it throws a `RevocationStalledError` instead: a transient `RefusalError` of code
+ * `deadline_exceeded`, which carries those entries in its `unchanged`.
  */
 export class CascadingRevocationManager {
   private readonly claims: ClaimReader;
@@ -119,7 +131,12 @@ export class CascadingRevocationManager {
    * the events of every delegation revoked and each entry left unchanged: those delegations are
    * revoked in the graph, which `isRevoked` reads, but not on the published list. A delegation
    * whose mark the graph storage provider dropped, and whose entry was not set, is recorded
-   * nowhere: that throws an `Error` naming it instead, also once the walk is done. A dry run
+   * nowhere: that throws an `Error` naming it instead, also once the walk is done. A delegation
+   * whose node another change holds for 10 seconds is not marked: the walk goes on, and then, before
+   * either of those, throws a transient `RevocationStalledError`, a `RefusalError` of code
+   * `deadline_exceeded`, naming it and carrying every report of the walk, so the caller revokes
+   * again. `onRevoke` is told of each delegation whose revocation landed, marked in the graph or set
+   * on its status list, and of no other. A dry run
    * changes nothing, and returns or throws what the real run would, short of what only changing
    * the list shows.
    */
@@ -144,6 +161,7 @@ export class CascadingRevocationManager {
       events: [],
       unchanged: [],
       unrecorded: [],
+      stalled: [],
       dryRun: options.dryRun === true,
     };
     await this.revokeNode(targetNode, walk, options.reason, options.onRevoke);
@@ -153,6 +171,9 @@ export class CascadingRevocationManager {
       await this.revokeNode(descendant, walk, `Cascaded from ${delegationId}`, options.onRevoke);
     }
 
+    if (walk.stalled.length > 0) {
+      throw revocationStalled(delegationId, walk);
+    }
     const [firstUnrecorded, ...moreUnrecorded] = walk.unrecorded;
     if (firstUnrecorded !== undefined) {
       throw revocationNotRecorded(firstUnrecorded, moreUnrecorded.length);
@@ -163,7 +184,10 @@ export class CascadingRevocationManager {
     return walk.events;
   }
 
-  /** Revoke one node of the walk's subtree, then tell `onRevoke`. A dry run marks and sets nothing. */
+  /**
+   * Revoke one node of the walk's subtree, then, once the revocation landed, marked in the graph or
+   * set on its status list, record its event and tell `onRevoke`. A dry run marks and sets nothing.
+   */
   private async revokeNode(
     node: DelegationNode,
     walk: RevocationWalk,
@@ -183,20 +207,40 @@ export class CascadingRevocationManager {
     // has no status list entry to flip (no status id, or one such as
     // urn:uuid:… that names no list and index), or when publishing the bit
     // below fails. A dry run marks nothing, and so needs no mark.
-    const marked = walk.dryRun ? true : await this.graph.setRevoked(node.id, true);
+    // A node whose turn did not come is not marked: the walk goes on, and
+    // says so at its end, so the caller revokes again.
+    const marked = await this.mark(node.id, walk);
     const outcome = await this.revokeEntry(node, walk, event);
     if (outcome.unchanged !== undefined) {
       walk.unchanged.push(outcome.unchanged);
     }
     // With no bit set, the mark is the only record. If the storage provider
     // dropped it, reporting success would leave the delegation live.
-    if (!marked && !outcome.set) {
+    if (marked === false && !outcome.set) {
       walk.unrecorded.push({ delegationId: node.id, unchanged: outcome.unchanged });
     }
+    // A node neither marked nor set was not revoked: nothing landed to tell of.
+    if (marked !== true && !outcome.set) return;
 
     walk.events.push(event);
     if (onRevoke) {
       await onRevoke(event);
+    }
+  }
+
+  /**
+   * Mark `delegationId` revoked in the graph, as the walk's revocation does, and say whether the
+   * stored node carries the mark: `'stalled'` when its turn did not come, which the walk records.
+   * A dry run marks nothing, and so needs no mark.
+   */
+  private async mark(delegationId: string, walk: RevocationWalk): Promise<boolean | 'stalled'> {
+    if (walk.dryRun) return true;
+    try {
+      return await this.graph.setRevoked(delegationId, true);
+    } catch (error) {
+      if (!isStalledTurn(error)) throw error;
+      walk.stalled.push(delegationId);
+      return 'stalled';
     }
   }
 
@@ -254,12 +298,16 @@ export class CascadingRevocationManager {
    * subtree stays revoked. An entry another delegation holds, by allocation or by registration, is
    * never cleared, since that would restore the other delegation: this throws a
    * `StatusEntryUnchangedError` before anything changes, and the delegation stays revoked, as it
-   * does for an entry that cannot be read or that the status list manager could not clear.
+   * does for an entry that cannot be read or that the status list manager could not clear. A
+   * delegation removed while revoked (`DelegationNode.removed`) throws, and stays revoked.
    */
   async restoreDelegation(delegationId: string): Promise<RevocationEvent> {
     const node = await this.graph.getNode(delegationId);
     if (!node) {
       throw new Error(`Delegation not found: ${delegationId}`);
+    }
+    if (node.removed === true) {
+      throw new Error(`Delegation ${delegationId} was removed while revoked, and its id stays revoked: it is not restored`);
     }
 
     const event: RevocationEvent = {
@@ -292,6 +340,15 @@ export class CascadingRevocationManager {
     return event;
   }
 
+  /**
+   * Whether `delegationId`, or an ancestor of it, is revoked, read root first over the chain the
+   * graph holds for it. A delegation the graph does not hold reads as not revoked: the chain walk
+   * asks about every credential of a chain, a leaf never registered among them.
+   *
+   * @throws {RefusalError} of code `status_unavailable` when the chain the graph holds does not read
+   *   from a root to `delegationId`, as one that stops at a node a replica has not received, or a
+   *   store lost, does: it says nothing of an ancestor above the gap. `validateChain` says where.
+   */
   async isRevoked(delegationId: string): Promise<{
     revoked: boolean;
     reason?: string;
@@ -306,6 +363,13 @@ export class CascadingRevocationManager {
     // revoked, with a reason that says the status could not be read, and does
     // not throw, since reading it by its truthiness did not.
     const chain = await this.graph.getChain(delegationId);
+    if (graphChainBreak(chain, delegationId) !== undefined) {
+      throw new RefusalError(
+        'status_unavailable',
+        `The delegation graph holds no chain from delegation ${describeValue(delegationId)} to a root, ` +
+          'so whether it is revoked cannot be read'
+      );
+    }
 
     for (const node of chain) {
       const answer: unknown = node.revoked ? true : await this.statusAnswer(node);
@@ -348,7 +412,16 @@ export class CascadingRevocationManager {
     return revoked;
   }
 
+  /**
+   * Whether `delegationId` stands: the graph holds a valid chain to it (`validateChain`), read
+   * first, and neither it nor an ancestor is revoked (`isRevoked`).
+   */
   async validateDelegation(delegationId: string): Promise<{ valid: boolean; reason?: string }> {
+    const chainValidation = await this.graph.validateChain(delegationId);
+    if (!chainValidation.valid) {
+      return chainValidation;
+    }
+
     const revokedCheck = await this.isRevoked(delegationId);
     if (revokedCheck.revoked) {
       return {
@@ -357,11 +430,6 @@ export class CascadingRevocationManager {
           ? `Ancestor ${revokedCheck.revokedAncestor} is revoked`
           : 'Delegation is revoked',
       };
-    }
-
-    const chainValidation = await this.graph.validateChain(delegationId);
-    if (!chainValidation.valid) {
-      return chainValidation;
     }
 
     return { valid: true };

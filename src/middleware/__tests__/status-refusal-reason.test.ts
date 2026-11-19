@@ -1,12 +1,14 @@
 /**
- * The delegation gate signs its refusal of a delegation whose status list is refused, with the reason
- * the status-list reader gives. A response proof signs the reason in RFC 8785 form, which refuses a
- * lone surrogate, so the reason must be well-formed text. The reader quotes a value as a JSON string
- * of at most its first 64 characters, counted as code points, so a cut just after a character outside
- * the Basic Multilingual Plane keeps that character whole, and it escapes a lone surrogate, as
- * `\ud83d`. The shipped CheqdStatusListResolver reads its pinned issuer's list, served
- * with another `id` or `issuer`; only the network is faked. A custom resolver whose answer is not a
- * boolean is refused the same way: the gate signs that the status could not be read.
+ * The delegation gate signs its refusal of a delegation whose status list is refused. A response
+ * proof signs the reason in RFC 8785 form, which refuses a lone surrogate, so the reason must be
+ * well-formed text. The status-list reader refuses a list served with another `id` or `issuer`
+ * before its proof is checked, so its words quote what the host answered: the gate signs only that
+ * the list could not be read or checked, and the operator's log gets the reader's words, where a
+ * value is quoted as a JSON string of at most its first 64 characters, counted as code points, so a
+ * cut just after a character outside the Basic Multilingual Plane keeps that character whole, and a
+ * lone surrogate is escaped, as `\ud83d`. The shipped CheqdStatusListResolver reads its pinned
+ * issuer's list; only the network is faked. A custom resolver whose answer is not a boolean is
+ * refused the same way: the gate signs that the status could not be read.
  */
 import { describe, it, expect } from 'vitest';
 import type { KyaOsToolHandler } from '../with-kya-os.js';
@@ -18,7 +20,9 @@ import { createRealIdentity, createRealStatusListManager } from '../../__tests__
 import { delegationRecord, signedCredential } from '../../__tests__/utils/delegation-credentials.js';
 import type { FetchProvider } from '../../providers/base.js';
 import type { CredentialStatus } from '../../types/protocol.js';
+import { withWarnings } from '../../__tests__/utils/logged-lines.js';
 import { createMiddleware, crypto, handshake, proofOf, served, verifyReceived } from './helpers/received-proof.js';
+import { WITHHELD_SUFFIX } from '../../utils/thrown-words.js';
 
 const EMOJI = '\u{1F600}';
 const LONE_HIGH = '\uD83D';
@@ -48,9 +52,13 @@ async function refusing(change: (list: Record<string, unknown>) => Record<string
     decompressor: statusListGzipCodec,
     cacheTtlMs: 0,
   });
-  const answered = await gateAnswer(statusListResolver, entry);
-  return { ...answered, statusIssuer: statusIssuer.did, url: entry.statusListCredential };
+  const { result: answered, logged } = await withWarnings(() => gateAnswer(statusListResolver, entry));
+  return { ...answered, logged, statusIssuer: statusIssuer.did, url: entry.statusListCredential };
 }
+
+/** What the gate signs for a list the reader refused before checking its proof, at `url`. */
+const unread = (url: string): string =>
+  `Delegation del-1 invalid: Status check error: the status list at "${url}" could not be read or checked${WITHHELD_SUFFIX}`;
 
 /** The gate's response to a delegation whose status is `entry`, read by `statusListResolver`. */
 async function gateAnswer(statusListResolver: StatusListResolver, entry: CredentialStatus) {
@@ -82,30 +90,23 @@ async function expectSignedRefusal(refusal: Awaited<ReturnType<typeof gateAnswer
 }
 
 describe('the delegation gate refusing a status list', () => {
-  it('signs a reason that cuts the list id just after a character outside the Basic Multilingual Plane', async () => {
+  it('signs that the list could not be read, and logs its id cut just after a character outside the Basic Multilingual Plane', async () => {
     const refusal = await refusing((list) => ({ ...list, id: `${'p'.repeat(63)}${EMOJI}${'q'.repeat(100_000)}` }));
-    await expectSignedRefusal(
-      refusal,
-      `Delegation del-1 invalid: Status check error: status list id "${'p'.repeat(63)}${EMOJI}"... ` +
-        `is not the URL it was fetched from ("${refusal.url}")`,
-    );
+    await expectSignedRefusal(refusal, unread(refusal.url));
+    expect(refusal.logged).toContain(`status list id "${'p'.repeat(63)}${EMOJI}"... is not the URL it was fetched from ("${refusal.url}")`);
   });
 
-  it('signs a reason that escapes a lone surrogate in the list id', async () => {
+  it('signs that the list could not be read, and logs its id with a lone surrogate escaped', async () => {
     const refusal = await refusing((list) => ({ ...list, id: `https://status.example/x${LONE_HIGH}y` }));
-    await expectSignedRefusal(
-      refusal,
-      `Delegation del-1 invalid: Status check error: status list id "https://status.example/x\\ud83dy" ` +
-        `is not the URL it was fetched from ("${refusal.url}")`,
-    );
+    await expectSignedRefusal(refusal, unread(refusal.url));
+    expect(refusal.logged).toContain(`status list id "https://status.example/x\\ud83dy" is not the URL it was fetched from ("${refusal.url}")`);
   });
 
-  it("signs a reason that escapes a lone surrogate in the list's issuer", async () => {
+  it("signs that the list could not be read, and logs its issuer with a lone surrogate escaped", async () => {
     const refusal = await refusing((list) => ({ ...list, issuer: `did:key:z6Mk${LONE_LOW}y` }));
-    await expectSignedRefusal(
-      refusal,
-      `Delegation del-1 invalid: Status check error: status list issuer "did:key:z6Mk\\ude00y" ` +
-        `does not keep this list's URL: "${refusal.statusIssuer}" does, as the issuer this resolver is configured with`,
+    await expectSignedRefusal(refusal, unread(refusal.url));
+    expect(refusal.logged).toContain(
+      `status list issuer "did:key:z6Mk\\ude00y" does not keep this list's URL: "${refusal.statusIssuer}" does, as the issuer this resolver is configured with`,
     );
   });
 

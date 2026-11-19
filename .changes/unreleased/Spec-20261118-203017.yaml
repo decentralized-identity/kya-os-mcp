@@ -1,0 +1,9 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.10 and SPEC-ENTITY-CARD.md §10.5: an `eddsa-jcs-2022`
+    issuer MUST set `proof.@context` as W3C vc-di-eddsa §3.3.1 does, and a
+    verifier MUST verify as §3.3.2 does.** Until 2.0.0 a verifier MUST also
+    accept a proof without `proof.@context` whose signed configuration
+    includes the document's `@context`, a shape issuers wrote before this
+    rule, the reference implementation from 1.22.0 to 1.25.0 among them.
+time: 2026-11-18T20:30:17.000000-06:00

@@ -841,6 +841,8 @@ This is the cross-organizational case: a resource server can verify an agent act
    The method is looked for only among those in `verificationMethod` and those `assertionMethod` embeds, never among those another relationship embeds.
    If more than one of them has the method's id, written as an absolute DID URL of the issuer or a `#fragment`, the id names no method, whether or not each of them conforms or names the issuer as its `controller`, and a Verifier MUST NOT verify the hop with any of them.
    A Verifier MUST verify each hop's proof over the credential as received, since the signature covers members a schema does not name.
+   An issuer MUST create the proof as [VC-DI-EDDSA] §3.3.1 does, setting `proof.@context` to the hop's `@context`, since a Verifier MUST verify it as §3.3.2 does, rebuilding the signed configuration from the proof alone.
+   During 1.x a Verifier MUST also accept a proof without `proof.@context` whose configuration, as signed, includes the hop's `@context` (SPEC.md §6.10).
 4. **Binding to the request.** The member sits inside `params._meta`, so `requestHash` does not cover it (§8.3).
    It is bound to the request by the leaf join of §10.2 instead: the leaf hop's delegate MUST equal the verified `proof.did`.
    A carried chain therefore authorizes nothing for a caller that does not hold the leaf key.
@@ -1405,6 +1407,7 @@ Retained for the legacy session-bound path (§15.5): `handshake_failed`, `sessio
 - **[DID-WEB]** W3C CCG. *did:web Method Specification*. https://w3c-ccg.github.io/did-method-web/
 - **[DID-KEY]** W3C CCG. *did:key Method Specification*. https://w3c-ccg.github.io/did-method-key/
 - **[VC-DATA-MODEL-2]** W3C. *Verifiable Credentials Data Model v2.0*. https://www.w3.org/TR/vc-data-model-2.0/
+- **[VC-DI-EDDSA]** W3C. *Data Integrity EdDSA Cryptosuites v1.0*. https://www.w3.org/TR/vc-di-eddsa/
 - **[ZCAP-LD]** W3C CCG. *Authorization Capabilities for Linked Data (ZCAP-LD)*. https://w3c-ccg.github.io/zcap-spec/
 - **[BITSTRING-STATUS-LIST]** W3C. *Bitstring Status List v1.0*. https://www.w3.org/TR/vc-bitstring-status-list/
 - **[CIMD]** IETF. *OAuth Client ID Metadata Document* (draft-ietf-oauth-client-id-metadata-document). https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/

@@ -54,11 +54,19 @@ function jcs(value: unknown): string {
   return `{${keys.map((key) => `${JSON.stringify(key)}:${jcs((value as Record<string, unknown>)[key])}`).join(',')}}`;
 }
 
-/** An `eddsa-jcs-2022` proof made apart from the module under test, hashing with `canonical`. */
+/**
+ * An `eddsa-jcs-2022` proof made apart from the module under test, hashing with `canonical`. It
+ * states the document's `@context` in the proof, which the signature covers, as W3C vc-di-eddsa
+ * §3.3.1 step 2 has an issuer do. From 1.22.0 to 1.25.0 this signer, like the library's, signed
+ * that `@context` without stating it in the proof, a shape a standard verifier refuses.
+ */
 function signedApart(document: Record<string, unknown>, canonical: (value: unknown) => string): Record<string, unknown> {
-  const proof = { type: 'DataIntegrityProof', cryptosuite: 'eddsa-jcs-2022', created: CREATED, verificationMethod: METHOD, proofPurpose: 'assertionMethod' };
+  const proof = {
+    type: 'DataIntegrityProof', cryptosuite: 'eddsa-jcs-2022', created: CREATED, verificationMethod: METHOD, proofPurpose: 'assertionMethod',
+    '@context': document['@context'],
+  };
   const hash = (value: unknown) => createHash('sha256').update(canonical(value)).digest();
-  const signature = sign(null, Buffer.concat([hash({ ...proof, '@context': document['@context'] }), hash(document)]), privateKey);
+  const signature = sign(null, Buffer.concat([hash(proof), hash(document)]), privateKey);
   return { ...document, proof: { ...proof, proofValue: `z${base58Encode(new Uint8Array(signature))}` } };
 }
 
@@ -75,7 +83,8 @@ describe('eddsa-jcs-2022 over RFC 8785', () => {
     expect(await verify(signedApart(listWith(subject), jcs))).toBe(true);
   });
 
-  it('signs plain JSON byte for byte as before', async () => {
+  // The W3C §3.3.1 proof: the proof 1.25.0 wrote, with the same signature, plus `proof.@context`.
+  it('signs plain JSON byte for byte as the W3C cryptosuite does', async () => {
     const plain = listWith({ type: 'BitstringStatusList', id: 'https://status.example/lists/1#list', encodedList: 'uH4sIAAAAAAAAA' });
     const signed = await signStatusListCredential(plain, await signer(), { created: CREATED });
     expect(signed).toEqual(signedApart(plain, (value) => canonicalize(value as Parameters<typeof canonicalize>[0])));

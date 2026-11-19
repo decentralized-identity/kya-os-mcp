@@ -53,7 +53,13 @@ function statusList(revoked: number[], issuer: unknown = ISSUER): Record<string,
   };
 }
 
-/** eddsa-jcs-2022 written out independently of the module under test. */
+/**
+ * eddsa-jcs-2022 written out independently of the module under test. The proof states the
+ * document's `@context` unless `options` names another, and the signature covers the one it
+ * states, as W3C vc-di-eddsa §3.3.1 step 2 has an issuer do. From 1.22.0 to 1.25.0 this signer,
+ * like the library's, signed the document's `@context` without stating it in the proof, a shape a
+ * standard verifier refuses.
+ */
 function signEddsaJcs2022(
   document: Record<string, unknown>,
   options: Record<string, unknown> = {},
@@ -64,11 +70,11 @@ function signEddsaJcs2022(
     created: '2026-01-01T00:00:00Z',
     verificationMethod: METHOD,
     proofPurpose: 'assertionMethod',
+    '@context': document['@context'],
     ...options,
   };
-  const config = { ...proof, '@context': document['@context'] };
   const hash = (value: unknown) => createHash('sha256').update(canonicalize(value)).digest();
-  const signature = sign(null, Buffer.concat([hash(config), hash(document)]), privateKey);
+  const signature = sign(null, Buffer.concat([hash(proof), hash(document)]), privateKey);
   return { ...document, proof: { ...proof, proofValue: `z${base58Encode(new Uint8Array(signature))}` } };
 }
 
@@ -86,6 +92,9 @@ describe('createStatusListProofVerifier (eddsa-jcs-2022)', () => {
     expect(await verify(signEddsaJcs2022(statusList([5])))).toBe(true);
   });
 
+  // The recorded list states no proof @context but signed the document's in its configuration,
+  // the 1.x legacy shape, so it verifies only through the legacy retry (verifiesAsLegacyProof).
+  // The lists builders.kya-os.org serves must be re-signed before that retry goes (DEPRECATIONS.md).
   it('accepts a list signed by builders.kya-os.org, an independent signer, once its key is an assertionMethod', async () => {
     const fixture = JSON.parse(
       readFileSync(new URL('./__fixtures__/builders-status-list.json', import.meta.url), 'utf8'),

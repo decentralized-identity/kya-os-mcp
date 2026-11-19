@@ -984,6 +984,8 @@ A verifier MAY hold each bound with a tolerance for the difference between its c
 Without one, a list whose issuer stamps its `validFrom` with the moment it publishes the list is refused, for as long as the difference, by every verifier whose clock runs behind the issuer's.
 The reference implementation holds both bounds with a tolerance of 120 seconds, the default skew of §11.3, which each status-list reader's `maxClockSkewMs` option sets, from 0 to 600,000 milliseconds.
 A list that states no end is read until its issuer replaces it, so an earlier version of it can be served for as long as it verifies; an issuer that states a `validUntil`, and republishes the list before it passes, bounds that.
+The reference implementation's `StatusList2021Manager` states such an end, as the `expirationDate` of a `StatusList2021Credential`, `listLifetimeMs` after it signs each version, when that option is set, and its `renewStatusList` signs a list again with a new end and the same bits.
+Without the option its lists state no end.
 In the reference implementation every status-list reader refuses a list outside its window with the transient code `status_unavailable`, since the issuer republishing the list ends it, and with a reason that names the bound and quotes the time the list states.
 An Entity Card's Entity keeps the URL its own Card names unless the verifier's configuration binds that URL to another issuer, so whoever holds the Entity's key and controls what the Card's `statusListCredential` URL returns can serve a list the Entity signed, with the Card's bit clear.
 Against a compromised Entity key, the responsible party revokes the root delegation credential, which the Card's accountability check reads (SPEC-ENTITY-CARD.md §12.5).

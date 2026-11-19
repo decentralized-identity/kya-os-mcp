@@ -28,6 +28,7 @@ import {
 } from './status-entry-owner.js';
 import { KeyedLock } from '../utils/keyed-lock.js';
 import { assertOneBitEntry, assertStoredUnder } from './statuslist-checks.js';
+import { listLifetimeOf, withEnd } from './statuslist-lifetime.js';
 import type { StatusListStorageProvider } from './statuslist-storage.js';
 import {
   commitStatusListChange,
@@ -59,6 +60,15 @@ export interface StatusList2021ManagerOptions extends StatusListWriteRetryOption
   statusListBaseUrl?: string;
   defaultListSize?: number;
   maxClockSkewMs?: number;
+  /**
+   * How long each version of a list the manager signs may be read, in milliseconds: every version,
+   * as it is created, changed or renewed, states as its `expirationDate` this long after it is
+   * signed, so a copy kept from before a revocation stops being read within that time (SPEC.md
+   * §6.6). Renew each list with `renewStatusList` before its end, as every half lifetime: a list
+   * past its end is unresolvable, and every credential on it is refused. A whole number greater
+   * than 0; any other value throws a `TypeError` naming the option. Unset, lists state no end.
+   */
+  listLifetimeMs?: number;
 }
 
 export class StatusList2021Manager implements StatusEntryOwners {
@@ -68,6 +78,8 @@ export class StatusList2021Manager implements StatusEntryOwners {
   private skewMs: number;
   /** How a write a conditional store refused is tried again. */
   private retry: StatusListWriteRetry;
+  /** How long each version of a list stays readable, or `undefined` when lists state no end. */
+  private lifetimeMs: number | undefined;
   /**
    * Per-status-list mutex for this manager's own writes. Every read-modify-write
    * of a list this manager makes (status updates and first creation) runs inside
@@ -121,6 +133,7 @@ export class StatusList2021Manager implements StatusEntryOwners {
     this.defaultListSize = options?.defaultListSize || 131072;
     this.skewMs = clockSkewOption(options?.maxClockSkewMs);
     this.retry = writeRetryOf(options);
+    this.lifetimeMs = listLifetimeOf(options?.listLifetimeMs);
   }
 
   /**
@@ -259,9 +272,43 @@ export class StatusList2021Manager implements StatusEntryOwners {
     return { write: await this.signed(updatedCredential), result: undefined };
   }
 
-  /** `credential` with a new proof by this manager's identity over all of it but its old proof. */
+  /**
+   * Sign the list stored under `statusListId` again, its bits unchanged, with a new end,
+   * `listLifetimeMs` from now, and store it, so a list nobody changes stays readable: renew each
+   * list before its end passes. Over a conditional store it is written as `updateStatus` writes.
+   *
+   * @throws {TypeError} when the manager was built without `listLifetimeMs`, before anything is read.
+   * @throws {Error} when no list is stored under `statusListId`.
+   * @throws {RefusalError} of code `delegation_malformed` when the list stored there was created
+   *   under another id.
+   * @throws {StatusListWriteConflictError} when a conditional store refused every write of it.
+   */
+  async renewStatusList(statusListId: string): Promise<void> {
+    if (this.lifetimeMs === undefined) {
+      throw new TypeError(
+        '[kya-os] renewStatusList gives a list a new end, and this manager gives its lists none: set listLifetimeMs'
+      );
+    }
+    await this.updateLocks.run(statusListId, () =>
+      commitStatusListChange(
+        this.storage,
+        statusListId,
+        async (statusList) => {
+          assertStoredUnder(statusList, statusListId);
+          return { write: await this.signed(statusList), result: undefined };
+        },
+        this.retry
+      )
+    );
+  }
+
+  /**
+   * `credential` with a new proof by this manager's identity over all of it but its old proof, and,
+   * when the manager gives its lists a lifetime, a new end first.
+   */
   private async signed(credential: StatusList2021Credential): Promise<StatusList2021Credential> {
-    const unsignedCredential = { ...credential };
+    const unsignedCredential: StatusList2021Credential =
+      this.lifetimeMs === undefined ? { ...credential } : withEnd(credential, this.lifetimeMs, Date.now());
     delete (unsignedCredential as Record<string, unknown>)['proof'];
 
     const canonicalVC = canonicalizeJSON(unsignedCredential);
@@ -271,7 +318,7 @@ export class StatusList2021Manager implements StatusEntryOwners {
       this.identity.getKeyId()
     );
 
-    return { ...credential, proof };
+    return { ...unsignedCredential, proof };
   }
 
   async checkStatus(credentialStatus: CredentialStatus): Promise<boolean> {
@@ -295,7 +342,7 @@ export class StatusList2021Manager implements StatusEntryOwners {
       throw new RefusalError('status_signer_untrusted', purpose.reason);
     }
     // A list outside the validity window it states says nothing of now, whatever its bits say. The
-    // lists this manager writes state no end.
+    // lists this manager writes state no end unless it gives them a lifetime (`listLifetimeMs`).
     assertStatusListValidity(statusList, Date.now(), this.skewMs);
 
     const manager = await BitstringManager.decode(

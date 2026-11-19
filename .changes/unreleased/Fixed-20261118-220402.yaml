@@ -1,0 +1,15 @@
+kind: Fixed
+body: |-
+    **`StatusList2021Manager` can state an end on every status list it signs,
+    so a copy kept from before a revocation stops being read.** A list that
+    states no end is read until its issuer replaces it, and the manager's
+    lists stated none and could not, so an old copy with a revoked
+    credential's bit clear, served by a cache, a mirror or the credential's
+    holder, verified for as long as the issuer's key did. The new option
+    `listLifetimeMs` gives every version, as it is created, changed or
+    renewed, an `expirationDate` that long after it is signed, and the new
+    `renewStatusList(statusListId)` signs a list again with a new end and the
+    same bits. Renew each list before its end: a list past it is refused by
+    every reader, the manager's own `checkStatus` included. Without the
+    option nothing changes.
+time: 2026-11-18T22:04:02.000000-06:00

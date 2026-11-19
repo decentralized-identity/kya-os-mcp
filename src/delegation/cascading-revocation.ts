@@ -20,6 +20,9 @@ import {
 } from './status-entry-unchanged-error.js';
 import { StatusList2021Manager } from './statuslist-manager.js';
 import { readRevoked, unreadableStatusReason } from '../utils/revocation-answer.js';
+import { describeValue } from '../utils/describe-value.js';
+import { RefusalError } from '../utils/refusal.js';
+import { graphChainBreak } from './graph-chain.js';
 
 export {
   StatusEntryUnchangedError,
@@ -292,6 +295,15 @@ export class CascadingRevocationManager {
     return event;
   }
 
+  /**
+   * Whether `delegationId`, or an ancestor of it, is revoked, read root first over the chain the
+   * graph holds for it. A delegation the graph does not hold reads as not revoked: the chain walk
+   * asks about every credential of a chain, a leaf never registered among them.
+   *
+   * @throws {RefusalError} of code `status_unavailable` when the chain the graph holds does not read
+   *   from a root to `delegationId`, as one that stops at a node a replica has not received, or a
+   *   store lost, does: it says nothing of an ancestor above the gap. `validateChain` says where.
+   */
   async isRevoked(delegationId: string): Promise<{
     revoked: boolean;
     reason?: string;
@@ -306,6 +318,13 @@ export class CascadingRevocationManager {
     // revoked, with a reason that says the status could not be read, and does
     // not throw, since reading it by its truthiness did not.
     const chain = await this.graph.getChain(delegationId);
+    if (graphChainBreak(chain, delegationId) !== undefined) {
+      throw new RefusalError(
+        'status_unavailable',
+        `The delegation graph holds no chain from delegation ${describeValue(delegationId)} to a root, ` +
+          'so whether it is revoked cannot be read'
+      );
+    }
 
     for (const node of chain) {
       const answer: unknown = node.revoked ? true : await this.statusAnswer(node);
@@ -348,7 +367,16 @@ export class CascadingRevocationManager {
     return revoked;
   }
 
+  /**
+   * Whether `delegationId` stands: the graph holds a valid chain to it (`validateChain`), read
+   * first, and neither it nor an ancestor is revoked (`isRevoked`).
+   */
   async validateDelegation(delegationId: string): Promise<{ valid: boolean; reason?: string }> {
+    const chainValidation = await this.graph.validateChain(delegationId);
+    if (!chainValidation.valid) {
+      return chainValidation;
+    }
+
     const revokedCheck = await this.isRevoked(delegationId);
     if (revokedCheck.revoked) {
       return {
@@ -357,11 +385,6 @@ export class CascadingRevocationManager {
           ? `Ancestor ${revokedCheck.revokedAncestor} is revoked`
           : 'Delegation is revoked',
       };
-    }
-
-    const chainValidation = await this.graph.validateChain(delegationId);
-    if (!chainValidation.valid) {
-      return chainValidation;
     }
 
     return { valid: true };

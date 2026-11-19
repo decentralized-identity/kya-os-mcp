@@ -1,0 +1,7 @@
+kind: Spec
+body: |-
+    **SPEC.md §6.5: a server refuses a delegation whose chain its graph cannot
+    read to a root.** It refuses it as `status_unavailable`, never as
+    standing, and keeps every delegation others are registered under, and
+    every revoked delegation with no status list entry, in its graph.
+time: 2026-11-18T22:05:01.000000-06:00

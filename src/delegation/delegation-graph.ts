@@ -18,6 +18,7 @@ import {
 } from './status-entry-claim.js';
 import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-owner.js';
 import { KeyedLock } from '../utils/keyed-lock.js';
+import { graphChainBreak } from './graph-chain.js';
 import {
   supportsAtomicRegistration,
   supportsStatusEntryLookup,
@@ -281,11 +282,21 @@ export class DelegationGraphManager {
     return chain.length - 1;
   }
 
+  /**
+   * Whether the graph holds a chain from a root to `delegationId` in which each delegation was
+   * issued by the subject of its parent. A chain that stops at a node the graph does not hold, as
+   * a replica that has not received it or a store that lost it reads, is invalid, as is one that
+   * ends at another delegation or whose links do not follow each `parentId`.
+   */
   async validateChain(delegationId: string): Promise<{ valid: boolean; reason?: string }> {
     const chain = await this.getChain(delegationId);
 
     if (chain.length === 0) {
       return { valid: false, reason: 'Delegation not found' };
+    }
+    const broken = graphChainBreak(chain, delegationId);
+    if (broken !== undefined) {
+      return { valid: false, reason: `Invalid chain: ${broken}` };
     }
 
     for (let i = 1; i < chain.length; i++) {
@@ -298,13 +309,6 @@ export class DelegationGraphManager {
           reason: `Invalid chain: ${child.id} issued by ${child.issuerDid} but parent ${parent.id} subject is ${parent.subjectDid}`,
         };
       }
-
-      if (child.parentId !== parent.id) {
-        return {
-          valid: false,
-          reason: `Invalid chain: ${child.id} parentId=${child.parentId} but actual parent is ${parent.id}`,
-        };
-      }
     }
 
     return { valid: true };
@@ -315,10 +319,21 @@ export class DelegationGraphManager {
    * `statusEntryOwners`, the entry allocated to it is retired first, so no
    * delegation, under any id, is registered with it again; a node that
    * carries an entry allocated to another retires nothing.
+   *
+   * Throws, removing nothing, for a delegation with delegations registered
+   * under it, which would be left under a parent the graph does not hold, so
+   * that none could be read to a root: remove them first. Throws too for a
+   * delegation revoked in the graph that has no status list entry, since the
+   * graph holds the only record of its revocation and a delegation it does
+   * not hold reads as not revoked: restore it first to remove it.
    */
   async removeDelegation(delegationId: string): Promise<void> {
     const node = await this.storage.getNode(delegationId);
     if (!node) return;
+    const refused = await this.removalRefusal(node);
+    if (refused !== undefined) {
+      throw new Error(`Delegation ${delegationId} is not removed: ${refused}`);
+    }
     await this.retireOwnedEntry(node);
 
     if (node.parentId) {
@@ -330,6 +345,24 @@ export class DelegationGraphManager {
     }
 
     await this.storage.deleteNode(delegationId);
+  }
+
+  /** Why `node` may not be removed, or `undefined` when it may. */
+  private async removalRefusal(node: DelegationNode): Promise<string | undefined> {
+    const children = await this.storage.getChildren(node.id);
+    if (children.length > 0) {
+      return (
+        `delegations are registered under it (${children.map((child) => child.id).join(', ')}). Remove them first, ` +
+        'since a delegation whose parent the graph does not hold cannot be read to a root'
+      );
+    }
+    if (node.revoked === true && readableStatusEntry(node) === undefined) {
+      return (
+        'it is revoked, and has no status list entry, so the graph holds the only record of its revocation, ' +
+        'and a delegation the graph does not hold reads as not revoked. Restore it first to remove it'
+      );
+    }
+    return undefined;
   }
 
   /** Retire `node`'s entry when the graph reads owners and the entry was allocated to `node`. */

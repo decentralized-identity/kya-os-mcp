@@ -815,6 +815,11 @@ When a delegation is revoked:
 3. Update StatusList2021 credential for each revoked delegation
 4. Emit revocation events for audit logging
 
+A server that reads revocation from its delegation graph reads a delegation's chain from a root down to it.
+When the graph holds a delegation but not that whole chain, as a replica that has not received a node, or a store that lost one, does not, the server cannot say whether an ancestor above the gap is revoked: it refuses the delegation as `status_unavailable` and never reads it as standing.
+A delegation the graph does not hold at all is read as not revoked there, since the server asks the graph about every credential of a chain, its ancestors among them.
+So the graph keeps every delegation that others are registered under, and every revoked delegation that has no status list entry, whose node is the only record of its revocation.
+
 #### 6.5.1 Revocation Rights
 
 For v1.0, the parties authorized to revoke a delegation are:

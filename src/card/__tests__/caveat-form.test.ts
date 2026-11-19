@@ -161,6 +161,16 @@ describe('a caveat nested deeper than a credential may nest', () => {
     expect(attenuates(root!, leaf!)).toEqual(['caveat "Custom" broadened or dropped by child (monotone-narrowing violated)']);
   });
 
+  it('is left out of the refused verdict, so a host can log the verdict whole', () => {
+    const p = parties();
+    const sibling = { type: 'Custom', value: 'kept' };
+    const verdict = validateDelegationChain(under(twoHops(p, [], []).slice(0, 1), [nestedCaveat('Custom', 20_000), sibling]), { now });
+    expect(verdict).toMatchObject({ ok: false, code: 'delegation_malformed', unknownCaveats: [sibling] });
+    expect(verdict.caveats).toContainEqual(sibling);
+    expect(verdict.caveats).toHaveLength(2); // the sibling and the hop's own validUntil
+    expect(() => JSON.stringify(verdict)).not.toThrow();
+  });
+
   it('is refused by verifyRequestDelegation and requireDelegation before any proof is read, which resolve rather than reject', async () => {
     const p = parties();
     // Set after signing: the chain rules run before any proof, so the proof is never read.

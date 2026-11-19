@@ -295,8 +295,8 @@ export interface EffectiveCaveats {
    * different currencies permit no call, and one that names none limits the amount whatever its
    * currency. A looser duplicate in one hop never shows here. The library has held the call to each
    * `ValidUntil` when it read the chain; the host holds it to every caveat here, each `MaxAmount`
-   * included, or refuses it: `caveatRefusal` does that. Empty when no hop states a caveat or a
-   * `validUntil`.
+   * included, or refuses it: `caveatRefusal` does that. A malformed caveat refuses the chain and is
+   * left out. Empty when no hop states a caveat or a `validUntil`.
    */
   caveats?: Caveat[];
   /**
@@ -319,7 +319,9 @@ export function effectiveCaveatsOf(chain: DelegationChain, hops: readonly HopCav
   for (const { validUntil } of chain) {
     if (parseDateTime(validUntil) !== undefined) keepTighter(groups, readOf({ type: 'ValidUntil', date: validUntil }));
   }
-  const caveats = [...groups.values()].map((read) => read.caveat);
+  // A malformed caveat refuses the chain (malformedCaveatRules) and may nest too deep to write out,
+  // so the verdict leaves it out: a host can log a refused verdict whole.
+  const caveats = [...groups.values()].filter((read) => read.malformed !== true).map((read) => read.caveat);
   return { caveats, unknownCaveats: caveats.filter((caveat) => !interprets(caveat)) };
 }
 

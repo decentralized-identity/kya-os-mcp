@@ -4,6 +4,82 @@ This file holds the detail behind the Upgrading entries in CHANGELOG.md: the ste
 Each release has one section, newest first, and declares every change of behaviour against the release before it.
 CHANGELOG.md says what changed and names the section here that says what to do about it.
 
+## From 1.25.0
+
+### A delegation verdict carries the caveats it grants under
+
+`requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain` and `validateDelegationChain` checked that each hop's caveats narrow its parent's, and then returned a verdict without them.
+A host that trusted the verdict alone never learned that the call was limited, for example by a `MaxAmount` of 100, and the library never sees the amount a call spends, so nothing held the call to the limit.
+Each verdict now carries `caveats`, every limit the chain states at its tightest, the chain's own expiry among them, and lists apart in `unknownCaveats` those the library does not interpret.
+Hold each call to them with the new `caveatRefusal`.
+
+The library reads caveats by one rule of its own: every caveat applies to every call.
+A `MaxAmount` limits the amount of every call: one that names a currency also requires the call to be in that currency, and one that names none limits the amount whatever its currency.
+So `MaxAmount` limits of 100 USD and 90 EUR together permit no call, and a limit of 100 beside one of 50 USD permits calls in USD up to 50.
+SPEC.md §6.10 says only that a child's `MaxAmount` is at most its parent's, in the same currency, compared as exact decimals.
+The library's rule is the reading under which a hop that adds a caveat, or pins a currency its parent left open, only narrows its parent, and a clarification of §6.10 that states it is proposed.
+A host that held a call only to the limits in the call's own currency would pass 1,000,000 EUR under a grant limited to 100 USD.
+
+`caveats` holds the lowest `MaxAmount` of each currency the chain names, the lowest of those that name none, the earliest `ValidUntil`, and each caveat the library does not interpret, once, as written, in the order each first appears.
+Each hop's own `validUntil` counts as a `ValidUntil` read after every caveat the hops state, so the earliest of them stands in for a later `ValidUntil` caveat, or is added when the chain states none, and a verdict you keep for later is still held to the chain's expiry.
+A limit that names a currency never stands in for one that names none, so both stay.
+Two caveats of one kind in one hop are read at the tightest, so a looser duplicate never shows.
+The narrowing check reads each hop the same way, once, in time linear in its caveats.
+Over well-formed caveats it passes and refuses the same chains as 1.25.0, apart from the caveats with a member the library does not know, below.
+
+The library does not interpret a caveat of a type it does not know, a type written in another case such as `maxAmount` included, or a caveat of a known type with a member it does not know, such as `{ "type": "MaxAmount", "limit": "100", "per": "day" }`.
+Each is listed, as written, in `unknownCaveats`.
+§6.10 requires a caveat of an unknown type to be replicated verbatim, and the library now holds a caveat of a known type with a member it does not know to the same rule, which the proposed clarification states too: a hop below must replicate it as written.
+The library still holds a hop to the date of such a `ValidUntil`.
+It still passes a call under such a caveat, and warns once per process, in fixed words, when it returns a passing grant or evaluation that carries one: `[kya-os] A delegation chain carries a caveat this library does not interpret, so it does not enforce it. ...`.
+`validateDelegationChain`, which runs before the proof, holder and root checks, never warns, and neither does a refused chain.
+
+A caveat in a form the library cannot read is now refused as `delegation_malformed`, on any hop, ahead of every other rule a hop breaks:
+
+- a `ValidUntil` that states no `date`, or one that is not an RFC 3339 date-time with its offset, which was already refused, as §6.10 requires of every date a hop states;
+- a `MaxAmount` that states no `limit`, a `limit` that is not a plain non-negative decimal string, such as `"abc"`, `"-5"`, `" 100 "`, `"1e3"` or `"100."`, or a `currency` that is not a string, none of which the library can compare as the exact decimals §6.10 compares; the proposed clarification states this too;
+- a caveat of any type whose arrays and objects nest more than 64 levels deep, `MAX_CREDENTIAL_NESTING_DEPTH`, the bound SPEC.md §7.8 sets on a whole credential. Such a caveat is never read whole, so it can no longer run the guard out of stack.
+
+The reason names the hop, such as `hop 0: MaxAmount caveat limit "1e3" is not a non-negative decimal`.
+Should the chain rules themselves ever fault, `verifyRequestDelegation` and `requireDelegation` now refuse the call as `runtime_error` and log what was thrown, rather than reject.
+A reason now quotes at most 64 characters of any date, limit or amount it names, as reasons already quote other values another party chose, so a hop's window reads `hop 0: expired (validUntil "2026-01-01T00:00:00Z" is in the past)`.
+
+Both members are optional in the types, so a result your own code builds still compiles, and the library sets both on every verdict it returns.
+A verdict without them, such as a test double or a grant cached from an earlier version, would read as unlimited to code that reads a missing list as no caveats; `caveatRefusal` refuses it instead.
+
+```ts
+import { caveatRefusal } from '@kya-os/mcp/card';
+
+const authority = await delegationGuard({ meta, proofDid: proof.did, action: request.params.name });
+if (!authority.ok) return { status: authority.status, error: authority.error };
+// Price the call from your own records, never from an amount the caller states.
+const order = priceOf(request.params.arguments); // { amount: '60.00', currency: 'USD' }, or undefined
+if (order === undefined) return { status: 400, error: { code: 'invalid_order', message: 'unknown item or quantity' } };
+const refusal = caveatRefusal(authority, order);
+if (refusal !== undefined) return { status: 403, error: { code: refusal.code, message: refusal.reason } };
+```
+
+`caveatRefusal(verdict, { amount, currency, at, maxClockSkewMs, enforcedTypes })` returns `undefined` when the call keeps to every caveat, or a refusal `{ code, reason, transient }`.
+Pass it the whole verdict: one that does not pass refuses every call, with the code it was refused with.
+It compares `amount`, a plain non-negative decimal string, with every `MaxAmount` exactly, by the rule above, and a call outside one is `insufficient_scope`.
+It reads each `ValidUntil` at `at`, in epoch milliseconds, the time of the check by default, with the guard's clock tolerance of 120 seconds unless `maxClockSkewMs` sets it, and one that has passed is `delegation_expired`.
+It refuses a malformed caveat as `delegation_malformed`.
+It refuses as `configuration_error` a verdict without `caveats` or `unknownCaveats`, a caveat of an unknown type that `enforcedTypes` does not name, and a `MaxAmount` or `ValidUntil` that states a member the library does not interpret.
+It throws a `TypeError` naming an option it cannot use, `MaxAmount` or `ValidUntil` in `enforcedTypes` among them, since naming either would pass every member of it the library does not interpret.
+
+| If you | Do this | Effect |
+| --- | --- | --- |
+| Act on a call that `requireDelegation` or `verifyRequestDelegation` passes, or a chain `evaluateDelegationChain` passes | Call `caveatRefusal` with the whole verdict and what the call spends, priced from your own records, and refuse the call when it returns a refusal. `examples/chain-by-value` shows how. | The call keeps to every limit each hop delegated. |
+| Hold calls to `caveats` with code of your own | Hold every call to every `MaxAmount`, refusing a call in a currency other than the one it names, and refuse when `caveats` is missing; or call `caveatRefusal`. | A limit in another currency, or a verdict without the list, no longer reads as no limit. |
+| Keep a grant or a verdict to act on later | Call `caveatRefusal` at the time of each call. | The chain's expiry is among its `caveats`, so a verdict kept past it refuses the call. |
+| Pass a call whose verdict lists a caveat in `unknownCaveats` | Enforce it yourself and name its type in `enforcedTypes`, or refuse the call. | Nothing in the library enforces it, and the warning above says so once. |
+| Read caveats from the chain yourself, with `readDelegationChain(meta)` or from `credentialSubject.caveats` | Read `caveats` from the verdict instead. | A hop may state two caveats of one kind, and the first one written may be the looser; the verdict holds the tightest of the whole chain. |
+| Issue a `ValidUntil` with no `date`, or a `MaxAmount` whose `limit` is not a plain decimal string | State the `date` as an RFC 3339 date-time with its offset, and the `limit` as digits with an optional point and fraction. | The chain was read as if the caveat set no end or no limit; it is now refused. |
+| Issue a `MaxAmount` or `ValidUntil` with a member of your own, such as `per` | Move the member into a caveat type of your own, or have every hop below replicate the caveat as written. | A hop that restates it narrower, or drops the member, is refused, since the library cannot tell whether the change narrows it, and `caveatRefusal` refuses every call under it. |
+| Match the text of a reason that names a hop's `validUntil`, `validFrom` or `ValidUntil` | Match the refusal code instead. | The reason now quotes the date. |
+| Compare a whole verdict in a test, as with `toEqual` | Add `caveats` and `unknownCaveats` to what you expect, with the hops' earliest `validUntil` as a `ValidUntil` in `caveats`. | The verdict has these two members more. |
+| Build a `DelegationChainResult` or a grant in your own code, as a double | Nothing, but pass the double through `caveatRefusal` only once it has `ok: true` and both members. | It compiles as before; without them, `caveatRefusal` refuses it. |
+
 ## From 1.24.0
 
 ### The delegation gate shows the failure your DID resolver reports

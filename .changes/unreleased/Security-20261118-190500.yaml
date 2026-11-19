@@ -1,0 +1,27 @@
+kind: Security
+body: |-
+    **A delegation verdict carries the caveats its chain grants under.**
+    `requireDelegation`, `verifyRequestDelegation`, `evaluateDelegationChain`
+    and `validateDelegationChain` checked that each hop's caveats narrow its
+    parent's, then returned a verdict without them, so a host that trusted the
+    verdict never learned that the call was limited, for example by a
+    `MaxAmount` of 100, and nothing held the call to the limit. Each verdict now
+    carries `caveats`, every limit the chain states at its tightest, the
+    earliest hop `validUntil` among them, and lists those the library does not
+    interpret apart in `unknownCaveats`. The new `caveatRefusal(verdict, {
+    amount, currency })` holds a call to them and answers with a refusal code
+    and reason: every caveat applies to every call, so a `MaxAmount` that names
+    a currency refuses a call in any other, and it fails closed on a verdict
+    that does not pass, one without the lists, and a caveat the host does not
+    enforce. A `ValidUntil` that states no date, a `MaxAmount` whose `limit` is
+    not a plain non-negative decimal or whose `currency` is not a string, and a
+    caveat nested more than 64 levels deep are now refused as
+    `delegation_malformed`, so no caveat can run the guard out of stack. A
+    `MaxAmount` or `ValidUntil` with a member the library does not know is now
+    compared verbatim. The library warns once per process when it passes a
+    verdict with a caveat it does not interpret, never from
+    `validateDelegationChain`, and a hop's caveats are read in time linear in
+    their number. SPEC.md §6.10 says only that a child's `MaxAmount` narrows its
+    parent's in the same currency; a clarification is proposed. UPGRADING.md, "A
+    delegation verdict carries the caveats it grants under", has the detail.
+time: 2026-11-18T19:05:00.000000-06:00

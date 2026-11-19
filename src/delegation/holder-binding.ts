@@ -13,6 +13,10 @@
  * derives the subject key straight from the DID and verifies the request proof
  * against it. A proof signed by any other key — a thief replaying a stolen
  * credential — cannot verify and is rejected.
+ * A request proof is EdDSA, so only an Ed25519 `did:key` can be bound: a
+ * subject that is a `did:key` of any other key, or one that does not decode,
+ * is reported `unbound`, never deferred, so a caller that enforces binding
+ * refuses it rather than take it as a bearer.
  *
  * `did:web` (and other non-`did:key`) subjects do not encode their key in the
  * DID and may rotate or hold several keys, so phase-1 cannot pin "the" key for
@@ -117,19 +121,23 @@ export const HOLDER_BINDING_ERROR = 'holder_binding_failed';
  *   caller is the holder. Allow.
  * - `unbound` — subject is a did:key but the proof failed (wrong key, tampered
  *   request, stale, or replayed). Reject — this is the theft-replay closure.
+ *   It is also the status of a did:key that encodes no Ed25519 key, which no
+ *   proof could be checked with.
  * - `not_applicable` — subject is not a did:key, so phase-1 cannot bind it.
  *   Defer to cnf-based binding (phase 2); the caller decides how to treat it.
  */
 export type HolderBindingStatus = 'bound' | 'unbound' | 'not_applicable';
 
 /**
- * Whether phase-1 holder binding can bind this subject. True only for did:key
- * (the DID encodes the key). The PEP uses this to decide between *enforcing* a
- * proof (did:key) and *deferring* to cnf binding (did:web and others), so it
- * never rejects legitimate traffic it cannot yet bind.
+ * Whether phase-1 holder binding applies to this subject. True for every did:key
+ * (the DID encodes the key), whether or not its key is one a proof can be checked
+ * with. The PEP uses this to decide between *enforcing* a proof (did:key) and
+ * *deferring* to cnf binding (did:web and others), so it never rejects
+ * legitimate traffic it cannot yet bind, and never lets through as a bearer a
+ * did:key subject that it cannot bind.
  */
 export function isHolderBindingApplicable(subjectDid: string): boolean {
-  return extractPublicKeyFromDidKey(subjectDid) !== null;
+  return getDidMethod(subjectDid) === 'key';
 }
 
 export interface AssertHolderBindingInput {
@@ -183,13 +191,22 @@ export async function assertHolderBinding(
 
   // Phase-1 scope: did:key subjects only — the DID encodes the key, so holding
   // the key is being the subject. Anything else is deferred to cnf binding.
-  const subjectKeyBytes = extractPublicKeyFromDidKey(subjectDid);
-  if (!subjectKeyBytes) {
+  if (!isHolderBindingApplicable(subjectDid)) {
     return {
       status: 'not_applicable',
       reason:
         `Holder binding (phase 1) covers did:key subjects only; ` +
         `"${getDidMethod(subjectDid) ?? 'unknown'}" is deferred to cnf-based binding`,
+    };
+  }
+  // A did:key of another key, or one that does not decode, can never be bound.
+  const subjectKeyBytes = extractPublicKeyFromDidKey(subjectDid);
+  if (!subjectKeyBytes) {
+    return {
+      status: 'unbound',
+      errorCode: HOLDER_BINDING_ERROR,
+      reason: 'The did:key subject does not encode an Ed25519 key, the only key a request proof is checked with',
+      cause: 'unsupported_subject_key',
     };
   }
 

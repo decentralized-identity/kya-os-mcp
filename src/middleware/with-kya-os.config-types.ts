@@ -182,6 +182,9 @@ export interface KyaOsDelegationConfig {
    * Scope is did:key subjects (the DID encodes the key). did:web and other
    * subjects are deferred to cnf-based binding (phase 2) and logged, never
    * rejected — so enabling `'enforce'` never breaks did:web traffic.
+   * A request proof is EdDSA, so only an Ed25519 did:key can be bound:
+   * `'enforce'` refuses a did:key subject of any other key, a P-256 one say, or
+   * one that does not decode, since no proof can bind it.
    */
   holderBinding?: "off" | "warn" | "enforce";
   /**

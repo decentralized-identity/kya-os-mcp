@@ -668,6 +668,10 @@ A verifier MUST reject one that the [URL] parser does not parse as it is written
 The set is fixed as Unicode 16.0 and 17.0 assign it, and `conformance/unseen-code-points.json` lists it, so that verifiers built on different Unicode versions give one verdict.
 The parser removes some of these before it parses and accepts the others, most of which render as nothing or reorder the text around them, so an issuer holding one could be taken for another DID.
 
+**The subject.** The `id` of a credential's `credentialSubject` MUST be a URL by the same rule, and a verifier MUST reject a credential whose subject `id` is not one.
+A party that re-delegates writes the subject of the credential it signs, and a verifier hands that `id` on as the acting agent's DID: into its log, its audit trail and the context of the call it authorizes.
+A line break there would end a log line and start one the party wrote, and a format character could show the `id` as another agent's DID.
+
 A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim
 semantics out of an authorization decision — a confused-deputy vector (§11.6) —
 the `credentialSubject` MUST contain only two properties: `id` (the delegate's

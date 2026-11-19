@@ -306,9 +306,11 @@ describe('the delegation gate and the audit digest of a delegation', () => {
     expect(gate.runs()).toBe(1);
   });
 
-  it('returns a signed refusal for a VC-JWT whose subject id its audit record cannot encode', async () => {
+  it('returns a signed refusal for a VC-JWT whose subject id holds what its audit record cannot encode', async () => {
     // The audit record holds members of the credential, its subject's id among them, and is encoded
-    // in RFC 8785 form, which refuses a lone surrogate, as the audit trail service encodes it.
+    // in RFC 8785 form, which refuses a lone surrogate, as the audit trail service encodes it. A
+    // subject id must be a URL that holds no such character, so the credential is refused for that,
+    // and its refusal is recorded in a form that encodes.
     const recorded: { event: string; encodes: boolean }[] = [];
     const gate = await acmeGate(undefined, {
       record: async (event) => {
@@ -325,7 +327,7 @@ describe('the delegation gate and the audit digest of a delegation', () => {
     const record = delegationRecord(ACME, { subjectDid: 'did:web:agent.example\uD800' });
     const jwt = await signedJwt(assert, { kid: assert.kid, record });
     expect(await gate.inSession(jwt)).toEqual({
-      outcome: 'delegation_invalid', reason: 'Delegation credential holds a value that cannot be encoded as RFC 8785 text',
+      outcome: 'delegation_invalid', reason: 'Credential subject id "did:web:agent.example\\ud800" is not a URL',
       proved: true, verified: true,
     });
     expect(recorded.filter(({ event }) => event.startsWith('delegation.'))).toEqual([{ event: 'delegation.rejected', encodes: true }]);

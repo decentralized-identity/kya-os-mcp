@@ -20,6 +20,7 @@ import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import { CHECKER_REASON_LENGTH, OPERATOR_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { coded } from "../utils/refusal.js";
+import { describeValue } from "../utils/describe-value.js";
 import type {
   KyaOsCallContext,
   KyaOsToolHandler,
@@ -281,9 +282,10 @@ export function createDelegationGate(
           }
         } else if (subjectDid) {
           // Non-did:key subject — phase 1 cannot pin its key; defer to cnf
-          // binding (phase 2) rather than reject legitimate traffic.
+          // binding (phase 2) rather than reject legitimate traffic. The
+          // subject is text its credential's issuer wrote, so it is quoted.
           logger.warn(
-            `[kya-os] Holder binding: subject "${subjectDid}" is not did:key; deferring to cnf binding (phase 2)`,
+            `[kya-os] Holder binding: subject ${describeValue(subjectDid)} is not did:key; deferring to cnf binding (phase 2)`,
           );
         }
       }

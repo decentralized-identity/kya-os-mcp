@@ -135,11 +135,17 @@ describe('the encoding of a delegation the gate verified', () => {
     const gate = await delegationGate({ trustedRootIssuers: [issuer.did], record: audited ? store.record : undefined });
     const edits = [
       replacing('"id":"del-', '"id":"\\ud800del-'),
-      replacing('"did:web:agent.example"', '"did:web:agent.example\\ud800"'),
       replacing('"controller":"did:web:user.example"', '"controller":"did:web:user.example\\udc00"'),
       replacing('"id":"urn:uuid:', '"id":"urn:uuid:\\ud800'),
     ];
     for (const edit of edits) expect(await gate.inSession(await signedJwt(issuer, signing(issuer, edit)))).toEqual(REFUSED);
+    // Its subject's id, which it hands on too, must first be a URL with no character a reader does
+    // not see, so one holding a lone surrogate is refused as no subject id, before it is encoded.
+    const subject = replacing('"did:web:agent.example"', '"did:web:agent.example\\ud800"');
+    expect(await gate.inSession(await signedJwt(issuer, signing(issuer, subject)))).toEqual({
+      ...REFUSED,
+      reason: 'Credential subject id "did:web:agent.example\\ud800" is not a URL',
+    });
     expect(store.events.filter((event) => event.startsWith('delegation.'))).toEqual(audited ? Array(4).fill('delegation.rejected') : []);
   });
 

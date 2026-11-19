@@ -983,8 +983,13 @@ describe('signed replay bundles', () => {
   it('rejects a predecessor checkpoint signed past the terminal its successor committed', async () => {
     const { journal, epochOne, builder, terminal, epochOneRecorder, verifyRollover } =
       await rolloverFixture();
+    // No checkpoint holds the selected epoch_2 entries, so the dimension is at
+    // best indeterminate; what this test holds is whether a fork is reported.
+    const unforked = {
+      verdict: 'indeterminate', reasonCodes: [AUDIT_REASON_CODES.CHECKPOINT_MISSING],
+    };
     expect((await verifyRollover(await journal.snapshot(epochOne), [terminal]))
-      .checkpointIntegrity).toEqual({ verdict: 'valid', reasonCodes: [] });
+      .checkpointIntegrity).toEqual(unforked);
 
     // The old authority keeps sequencing epoch_1 after the rollover. Its
     // uncommitted tail entries prove nothing; a checkpoint over them does.
@@ -994,12 +999,15 @@ describe('signed replay bundles', () => {
       }, rolloverContext);
     }
     const tail = await journal.snapshot(epochOne);
-    expect((await verifyRollover(tail, [terminal])).checkpointIntegrity)
-      .toEqual({ verdict: 'valid', reasonCodes: [] });
+    expect((await verifyRollover(tail, [terminal])).checkpointIntegrity).toEqual(unforked);
     const split = await verifyRollover(tail, [terminal, await builder.createCheckpoint(epochOne)]);
     expect(split.cryptographicIntegrity.verdict).toBe('valid');
     expect(split.checkpointIntegrity).toEqual({
-      verdict: 'invalid', reasonCodes: [AUDIT_REASON_CODES.CHECKPOINT_FORK_DETECTED],
+      verdict: 'invalid',
+      reasonCodes: [
+        AUDIT_REASON_CODES.CHECKPOINT_FORK_DETECTED,
+        AUDIT_REASON_CODES.CHECKPOINT_MISSING,
+      ],
     });
   });
 
@@ -1014,7 +1022,11 @@ describe('signed replay bundles', () => {
     });
 
     const report = await verifyRollover(predecessor, [terminal]);
-    expect(report.checkpointIntegrity).toEqual({ verdict: 'valid', reasonCodes: [] });
+    // The lifecycle event, and the epoch_2 entries, sit in no checkpoint: the
+    // dimension is indeterminate for that, and reports no fork.
+    expect(report.checkpointIntegrity).toEqual({
+      verdict: 'indeterminate', reasonCodes: [AUDIT_REASON_CODES.CHECKPOINT_MISSING],
+    });
     expect(report.cryptographicIntegrity.verdict).toBe('valid');
     expect(report.chainIntegrity.verdict).toBe('valid');
     expect(report.scopeEvidenceCompleteness.verdict).toBe('valid');

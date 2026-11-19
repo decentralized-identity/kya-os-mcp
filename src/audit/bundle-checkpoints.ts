@@ -249,3 +249,32 @@ export function verifyInclusionBinding(
   }
   return dimension(reasons.size === 0 ? 'valid' : 'invalid', reasons);
 }
+
+/**
+ * For each selection, the digests of the checkpoints that cover it: of its ledger epoch, over a
+ * tree that holds every entry it selects. A checkpoint, an observation or a supporting anchor is
+ * evidence about the entries a bundle selects only through one of these.
+ */
+export function coveringCheckpoints(
+  selections: readonly AuditBundleSelectionV1[],
+  checkpoints: readonly SignedAuditCheckpointV1[],
+): ReadonlySet<string>[] {
+  const byEpoch = new Map<string, SignedAuditCheckpointV1[]>();
+  for (const checkpoint of checkpoints) {
+    const key = ledgerEpochKey(checkpoint.core);
+    byEpoch.set(key, [...(byEpoch.get(key) ?? []), checkpoint]);
+  }
+  return selections.map((selection) => new Set((byEpoch.get(ledgerEpochKey(selection)) ?? [])
+    .filter((checkpoint) => BigInt(checkpoint.core.treeSize) > BigInt(selection.lastSequence))
+    .map((checkpoint) => checkpoint.checkpointDigest)));
+}
+
+/** Whether `digests` name, for every selection, one of the checkpoints that cover it. */
+export function coversEverySelection(
+  covering: readonly ReadonlySet<string>[],
+  digests: readonly string[],
+): boolean {
+  const named = new Set(digests);
+  return covering.every((digestsOfSelection) =>
+    [...digestsOfSelection].some((digest) => named.has(digest)));
+}

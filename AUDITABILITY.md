@@ -468,6 +468,11 @@ nonce caches. It verifies:
 Everything a bundle carries must sit inside a selection its signed manifest declares, because the exporter's grant is checked against those selections.
 An entry outside every selected range, or a checkpoint, observation, or Merkle proof of a ledger epoch no selection names, makes committed-scope completeness `invalid` (`AUDIT_BUNDLE_CONTENT_OUTSIDE_SELECTION`).
 
+Checkpoint and observation integrity speak for the entries a bundle selects.
+A checkpoint covers a selection when it belongs to the selection's ledger epoch and its tree holds every entry selected.
+Until a checkpoint in the bundle covers every selection, checkpoint integrity is at best `indeterminate` (`AUDIT_CHECKPOINT_MISSING`), and until an observation in the bundle names such a checkpoint for every selection, observation integrity is at best `indeterminate` (`AUDIT_OBSERVER_EVIDENCE_MISSING`).
+A checkpoint over an earlier tree, or of another epoch, says nothing about entries it does not hold, so a bundle meant to meet AAP-3 or AAP-4 selects ranges that end inside a checkpoint's tree.
+
 A subset export need not carry every leaf. A checkpoint whose complete prefix is
 present has its root recomputed; otherwise its signature, digest, issuer trust,
 and declared range are verified (`AuditArtifactVerifier.verifySignedCheckpoint`),
@@ -501,8 +506,8 @@ rejected for the constraints it uses:
 - `requiredAuditProfile` marks every dimension the profile depends on
   `invalid` (`AUDIT_REQUIRED_PROFILE_UNMET`) unless it is `valid`: AAP-1 needs
   cryptographic integrity, AAP-2 adds chain integrity, AAP-3 checkpoint
-  integrity, and AAP-4 observation integrity plus at least one supporting
-  anchor receipt.
+  integrity, and AAP-4 observation integrity plus, for every selection, a
+  supporting anchor receipt for a checkpoint that covers it.
 - `keyRevocationMode` selects when key status is evaluated. The integrity
   dimensions always evaluate a key as observed, at the artifact's signing time
   and ledger position, because revocation does not rewrite what was observed;

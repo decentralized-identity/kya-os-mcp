@@ -7,6 +7,8 @@ import {
   sameLedgerEpoch,
 } from './bundle-components.js';
 import {
+  coveringCheckpoints,
+  coversEverySelection,
   isCompletePrefix,
   verifyCheckpointHistory,
   verifyInclusionBinding,
@@ -23,6 +25,7 @@ import { hashAuditValue } from './crypto.js';
 import { AUDIT_DIGEST_DOMAINS } from './integrity.js';
 import { sameSigner, validAt } from './key-trust.js';
 import {
+  auditAnchorReceiptSchema,
   auditBundleConsistencyProofSchema,
   auditBundleInclusionProofSchema,
   auditObservationReceiptSchema,
@@ -391,6 +394,15 @@ export async function verifyAuditBundle(
   } else if (core.selections.some((selection) => selection.checkpointTreeSizes.length > 0)) {
     checkpointDimension = dimension('invalid', [AUDIT_REASON_CODES.CHECKPOINT_MISSING]);
   }
+  // Checkpoint and observation verdicts speak for the selected entries only
+  // through a checkpoint that holds them all.
+  const covering = coveringCheckpoints(core.selections, checkpoints);
+  if (covering.some((digests) => digests.size === 0)) {
+    checkpointDimension = mergeAuditDimensions(
+      checkpointDimension,
+      dimension('indeterminate', [AUDIT_REASON_CODES.CHECKPOINT_MISSING]),
+    );
+  }
   let anchorDimension = artifactReport.anchorIntegrity;
   if (observationCandidates.length > 0) {
     const observationResults: AuditVerificationDimension[] = [];
@@ -408,6 +420,12 @@ export async function verifyAuditBundle(
     }
     observationResults.push(verifyObservationHistory(observations));
     anchorDimension = mergeDimensionList(observationResults);
+  }
+  if (!coversEverySelection(covering, observations.map((receipt) => receipt.core.checkpointDigest))) {
+    anchorDimension = mergeAuditDimensions(
+      anchorDimension,
+      dimension('indeterminate', [AUDIT_REASON_CODES.OBSERVER_EVIDENCE_MISSING]),
+    );
   }
   if (anchorCandidates.length > 0) {
     anchorDimension = mergeAuditDimensions(
@@ -458,5 +476,10 @@ export async function verifyAuditBundle(
     currentAuthorization: currentKeys === undefined
       ? artifactReport.currentAuthorization
       : mergeAuditDimensions(artifactReport.currentAuthorization, currentKeys),
-  }, policy, { supportingAnchors: anchorCandidates.length > 0 });
+  }, policy, {
+    supportingAnchors: coversEverySelection(covering, anchorCandidates
+      .filter((candidate): candidate is AuditAnchorReceipt =>
+        auditAnchorReceiptSchema.safeParse(candidate).success)
+      .map((receipt) => receipt.checkpointDigest)),
+  });
 }

@@ -38,6 +38,7 @@ With outbound delegation propagation:
 `buildOutboundDelegationHeaders()` sends `KYA-OS-Delegation-Credential` when you pass the credential as `credentialJwt`.
 Without it, a service that follows §8.1 can authorize nothing, and the first call in a process that omits it logs a warning.
 The header carries a VC-JWT: the credential the agent presented in that form, a grant's `credentialJwt`, or one the issuer signs as the demo does.
+It throws, and signs nothing, for a delegation record that is not in force: one that is not `active`, is before its `notBefore` or past its `notAfter`, or names an audience that does not admit the forwarding server.
 
 ## The Delegation Proof JWT
 

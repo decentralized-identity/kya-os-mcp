@@ -19,6 +19,8 @@ import type { SessionContext, DelegationRecord } from '../types/protocol.js';
 import { buildDelegationProofJWT, type Ed25519PrivateJWK } from './outbound-proof.js';
 import { extractPublicKeyFromDidKey, isEd25519DidKey } from './did-key-resolver.js';
 import { parseVCJWT } from './utils.js';
+import { verifyDelegationAudience } from './audience-validator.js';
+import { describeValue } from '../utils/describe-value.js';
 import { base64ToBytes, base64urlEncodeFromBytes } from '../utils/base64.js';
 import { strictBase64urlBytes } from '../utils/base64-reading.js';
 import { isRecord } from '../utils/guards.js';
@@ -123,6 +125,34 @@ function credentialHeader(credentialJwt: unknown): Pick<OutboundDelegationHeader
   return { [OUTBOUND_HEADER_NAMES.DELEGATION_CREDENTIAL]: credentialJwt };
 }
 
+/** Whether `bound`, a bound in epoch seconds, is one: a finite number. */
+const isEpochSeconds = (bound: unknown): bound is number => typeof bound === 'number' && Number.isFinite(bound);
+
+/**
+ * Why the server must not forward `delegation` now, or `undefined` when it may. The proof the
+ * helper signs tells the target that this server is propagating the delegation, and the target may
+ * act on that alone, so the server signs it only for a record that is in force: active, inside its
+ * `notBefore` and `notAfter`, held exactly as the gate holds a credential's and with a bound that is
+ * no number read as passed, and addressed to this server, as the gate requires of what it accepts.
+ */
+function forwardingRefusal(delegation: DelegationRecord, serverDid: string): string | undefined {
+  if (delegation.status !== 'active') {
+    return `Delegation must be active for outbound delegation (its status is ${describeValue(delegation.status)})`;
+  }
+  const { notBefore, notAfter } = delegation.constraints;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (notAfter !== undefined && !(isEpochSeconds(notAfter) && nowSec <= notAfter)) {
+    return 'Delegation must not be past its notAfter for outbound delegation';
+  }
+  if (notBefore !== undefined && !(isEpochSeconds(notBefore) && nowSec >= notBefore)) {
+    return 'Delegation must not be before its notBefore for outbound delegation';
+  }
+  if (!verifyDelegationAudience(delegation, serverDid)) {
+    return 'Delegation audience must admit the forwarding server for outbound delegation';
+  }
+  return undefined;
+}
+
 /** Domain of a session anchor: `SHA-256(UTF8(domain) || 0x00 || JCS([sessionId, target host]))`. */
 const SESSION_ANCHOR_DOMAIN = 'org.kya-os.outbound.session-anchor.v1';
 
@@ -205,6 +235,8 @@ function buildPrivateKeyJwk(
  *
  * @throws {Error} If session is missing agentDid or sessionId
  * @throws {Error} If delegation is missing vcId
+ * @throws {Error} If delegation is not active, is before its notBefore or past its notAfter, or
+ *   names an audience that does not admit serverIdentity.did
  * @throws {TypeError} If credentialJwt is given and is not a compact VC-JWT
  * @throws {Error} If serverIdentity.did is not a valid Ed25519 did:key
  *
@@ -238,6 +270,11 @@ export async function buildOutboundDelegationHeaders(
 
   if (!delegation.vcId) {
     throw new Error('Delegation must have vcId for outbound delegation');
+  }
+
+  const refusal = forwardingRefusal(delegation, serverIdentity.did);
+  if (refusal !== undefined) {
+    throw new Error(refusal);
   }
 
   const credential = credentialHeader(credentialJwt);

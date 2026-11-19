@@ -14,11 +14,10 @@ import { BitstringManager, type CompressionFunction, type DecompressionFunction 
 import { parseStatusListIndex } from '../utils/statuslist-bits.js';
 import type { VCSigningFunction } from './vc-issuer.js';
 import { canonicalizeJSON } from './utils.js';
-import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
+import { acceptStatusPurpose } from '../utils/statuslist-acceptance.js';
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 import { RefusalError } from '../utils/refusal.js';
-import { describeValue } from '../utils/describe-value.js';
 import {
   entryOwnerRecorder,
   readEntryOwner,
@@ -28,6 +27,7 @@ import {
   type StatusEntryOwners,
 } from './status-entry-owner.js';
 import { KeyedLock } from '../utils/keyed-lock.js';
+import { assertOneBitEntry, assertStoredUnder } from './statuslist-checks.js';
 import type { StatusListStorageProvider } from './statuslist-storage.js';
 import {
   commitStatusListChange,
@@ -231,16 +231,7 @@ export class StatusList2021Manager implements StatusEntryOwners {
   ): Promise<StatusListChange<void>> {
     const { statusListCredential, statusListIndex } = credentialStatus;
 
-    if (!statusList) {
-      throw new Error(`Status list not found: ${statusListCredential}`);
-    }
-    if (statusList.id !== statusListCredential) {
-      throw new RefusalError(
-        'delegation_malformed',
-        `Status list ${describeValue(statusListCredential)} reads as the list ${describeValue(statusList.id)}, so no ` +
-          'entry of it is set or cleared: an entry names its list by the id the list was created with'
-      );
-    }
+    assertStoredUnder(statusList, statusListCredential);
 
     const manager = await BitstringManager.decode(
       statusList.credentialSubject.encodedList,
@@ -408,19 +399,6 @@ export class StatusList2021Manager implements StatusEntryOwners {
 
   getDefaultListSize(): number {
     return this.defaultListSize;
-  }
-}
-
-/**
- * Throw unless `credentialStatus` is one bit wide, as the shared rule decides it
- * ({@link acceptEntrySize}). The manager reads and writes the bit at an entry's index, and an entry
- * of another `statusSize` keeps its status in other bits, so the bit at its index is another
- * entry's. It throws before any list is read from storage.
- */
-function assertOneBitEntry(credentialStatus: CredentialStatus): void {
-  const size = acceptEntrySize(credentialStatus.statusSize);
-  if (!size.valid) {
-    throw new RefusalError('delegation_malformed', size.reason);
   }
 }
 

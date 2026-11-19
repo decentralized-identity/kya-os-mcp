@@ -9,7 +9,7 @@
 
 import type { CredentialStatus } from '../types/protocol.js';
 import { registrationConflict } from './delegation-registration.js';
-import { canonicalStatusEntry, entryKey, nodeStatusEntry, readableStatusEntry } from './delegation-status-entry.js';
+import { canonicalStatusEntry, entryKey, nodeStatusEntry } from './delegation-status-entry.js';
 import {
   assertRegistrable,
   readClaim,
@@ -20,6 +20,7 @@ import { readsStatusEntryOwners, type StatusEntryOwners } from './status-entry-o
 import { KeyedLock, keyedLockOf } from '../utils/keyed-lock.js';
 import { warnOncePerProcess } from '../utils/warn-once.js';
 import { graphChainBreak } from './graph-chain.js';
+import { removeDelegationNode } from './delegation-removal.js';
 import {
   supportsAtomicRegistration,
   supportsStatusEntryLookup,
@@ -364,56 +365,10 @@ export class DelegationGraphManager {
    * not hold reads as not revoked: restore it first to remove it.
    */
   async removeDelegation(delegationId: string): Promise<void> {
-    await this.nodeTurns.run(delegationId, async () => {
-      const node = await this.storage.getNode(delegationId);
-      if (!node) return;
-      const refused = await this.removalRefusal(node);
-      if (refused !== undefined) {
-        throw new Error(`Delegation ${delegationId} is not removed: ${refused}`);
-      }
-      await this.retireOwnedEntry(node);
-
-      const parentId = node.parentId;
-      if (parentId) {
-        await this.nodeTurns.run(parentId, async () => {
-          const parent = await this.storage.getNode(parentId);
-          if (parent) {
-            parent.children = parent.children.filter((id) => id !== delegationId);
-            await this.storage.setNode(parent);
-          }
-        });
-      }
-
-      await this.storage.deleteNode(delegationId);
-    });
-  }
-
-  /** Why `node` may not be removed, or `undefined` when it may. */
-  private async removalRefusal(node: DelegationNode): Promise<string | undefined> {
-    const children = await this.storage.getChildren(node.id);
-    if (children.length > 0) {
-      return (
-        `delegations are registered under it (${children.map((child) => child.id).join(', ')}). Remove them first, ` +
-        'since a delegation whose parent the graph does not hold cannot be read to a root'
-      );
-    }
-    if (node.revoked === true && readableStatusEntry(node) === undefined) {
-      return (
-        'it is revoked, and has no status list entry, so the graph holds the only record of its revocation, ' +
-        'and a delegation the graph does not hold reads as not revoked. Restore it first to remove it'
-      );
-    }
-    return undefined;
-  }
-
-  /** Retire `node`'s entry when the graph reads owners and the entry was allocated to `node`. */
-  private async retireOwnedEntry(node: DelegationNode): Promise<void> {
-    const owners = this.entrySources.owners;
-    const entry = owners === undefined ? undefined : readableStatusEntry(node);
-    if (owners === undefined || entry === undefined) return;
-    if ((await owners.getStatusEntryOwner(entry))?.delegationId === node.id) {
-      await owners.retireStatusEntry(entry);
-    }
+    await removeDelegationNode(
+      { storage: this.storage, turns: this.nodeTurns, owners: this.entrySources.owners },
+      delegationId,
+    );
   }
 }
 

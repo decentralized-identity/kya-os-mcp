@@ -5,6 +5,7 @@
 
 import {
   compareDecimal,
+  firstByKey,
   ledgerEpochKey,
 } from './bundle-components.js';
 import { validAt } from './key-trust.js';
@@ -26,7 +27,6 @@ import { AUDIT_REASON_CODES, dimension, mergeDimensionList } from './verdicts.js
 import type { AuditArtifactVerifier } from './verifier.js';
 import type { AuditVerificationContext } from './verifier-types.js';
 
-/** Verifies a supporting anchor's receipt for a checkpoint, as `verifyAuditBundle` is given one. */
 /** The members of a verification report that are dimensions. */
 type AuditReportDimensionName = {
   [Name in keyof AuditVerificationReportV1]-?:
@@ -41,6 +41,7 @@ const OMISSION_REASONS: Readonly<Record<Exclude<AuditBundleDisposition, 'include
   policy_excluded: AUDIT_REASON_CODES.EXPLICITLY_POLICY_EXCLUDED,
 };
 
+/** Verifies a supporting anchor's receipt for a checkpoint, as `verifyAuditBundle` is given one. */
 export type SupportingAnchorVerifier = (
   checkpoint: SignedAuditCheckpointV1,
   receipt: AuditAnchorReceipt,
@@ -117,14 +118,14 @@ export async function verifySupportingAnchors(
 ): Promise<AuditVerificationDimension> {
   const reasons = new Set<string>();
   let notEvaluated = false;
+  const byDigest = firstByKey(checkpoints, (checkpoint) => checkpoint.checkpointDigest);
   for (const candidate of candidates) {
     if (!auditAnchorReceiptSchema.safeParse(candidate).success) {
       reasons.add(AUDIT_REASON_CODES.SCHEMA_INVALID);
       continue;
     }
     const receipt = candidate as AuditAnchorReceipt;
-    const checkpoint = checkpoints.find((value) =>
-      value.checkpointDigest === receipt.checkpointDigest);
+    const checkpoint = byDigest.get(receipt.checkpointDigest);
     const trusted = policy.trustedSupportingAnchors?.some((value) =>
       value.kind === receipt.kind && value.providerId === receipt.providerId &&
       validAt(value, receipt.issuedAt)) ?? false;
@@ -142,6 +143,40 @@ export async function verifySupportingAnchors(
   return dimension(invalid ? 'invalid' : notEvaluated ? 'indeterminate' : 'valid', reasons);
 }
 
+/** A range of sequences, both ends included. */
+interface SequenceRange {
+  first: bigint;
+  last: bigint;
+}
+
+/** `ranges` sorted and merged where they overlap or meet, so no two share or neighbour a sequence. */
+function mergedRanges(ranges: readonly SequenceRange[]): SequenceRange[] {
+  const sorted = [...ranges].sort((left, right) => (left.first < right.first ? -1 : left.first > right.first ? 1 : 0));
+  const merged: SequenceRange[] = [];
+  for (const range of sorted) {
+    const last = merged.at(-1);
+    if (last !== undefined && range.first <= last.last + 1n) {
+      if (range.last > last.last) last.last = range.last;
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  return merged;
+}
+
+/** Whether `sequence` lies in one of `merged`, sorted and disjoint: a binary search. */
+function inMergedRanges(merged: readonly SequenceRange[], sequence: bigint): boolean {
+  let low = 0;
+  let high = merged.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (merged[middle]!.last < sequence) low = middle + 1;
+    else high = middle;
+  }
+  const range = merged[low];
+  return range !== undefined && range.first <= sequence;
+}
+
 /**
  * Whether the bundle carries an artifact outside every selection its signed manifest declares.
  * The exporter's grant is checked against those selections, so what lies outside them would reach
@@ -153,19 +188,50 @@ function carriesUnselected(
   entries: readonly SignedAuditEntryV1[],
   scoped: readonly AuditLedgerRef[],
 ): boolean {
-  const selected = new Map<string, AuditBundleSelectionV1[]>();
+  const selected = new Map<string, SequenceRange[]>();
   for (const selection of selections) {
     const key = ledgerEpochKey(selection);
     const group = selected.get(key) ?? [];
-    group.push(selection);
+    group.push({ first: BigInt(selection.firstSequence), last: BigInt(selection.lastSequence) });
     selected.set(key, group);
   }
   if (scoped.some((artifact) => !selected.has(ledgerEpochKey(artifact)))) return true;
-  return entries.some((entry) => {
-    const sequence = BigInt(entry.core.sequence);
-    return !(selected.get(ledgerEpochKey(entry.core)) ?? []).some((selection) =>
-      BigInt(selection.firstSequence) <= sequence && sequence <= BigInt(selection.lastSequence));
+  const merged = new Map([...selected].map(([key, ranges]) => [key, mergedRanges(ranges)]));
+  return entries.some((entry) =>
+    !inMergedRanges(merged.get(ledgerEpochKey(entry.core)) ?? [], BigInt(entry.core.sequence)));
+}
+
+/**
+ * The entries a bundle carries for one ledger epoch, as a selection of that epoch reads them: one
+ * entry for each sequence, in order, and whether a sequence came twice or one is missing between
+ * the first and the last.
+ */
+interface EpochEntries {
+  ordered: SignedAuditEntryV1[];
+  hasDuplicateSequence: boolean;
+  contiguous: boolean;
+}
+
+function epochEntries(group: readonly SignedAuditEntryV1[]): EpochEntries {
+  const uniqueBySequence = new Map<string, SignedAuditEntryV1>();
+  let hasDuplicateSequence = false;
+  for (const entry of group) {
+    if (uniqueBySequence.has(entry.core.sequence)) hasDuplicateSequence = true;
+    else uniqueBySequence.set(entry.core.sequence, entry);
+  }
+  const ordered = [...uniqueBySequence.values()].sort((left, right) => {
+    const leftSequence = BigInt(left.core.sequence);
+    const rightSequence = BigInt(right.core.sequence);
+    return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
   });
+  let contiguous = true;
+  for (let index = 1; index < ordered.length; index += 1) {
+    if (BigInt(ordered[index]!.core.sequence) !== BigInt(ordered[index - 1]!.core.sequence) + 1n) {
+      contiguous = false;
+      break;
+    }
+  }
+  return { ordered, hasDuplicateSequence, contiguous };
 }
 
 /**
@@ -183,35 +249,23 @@ export function selectionCompleteness(
   if (carriesUnselected(selections, entries, scoped)) {
     reasons.add(AUDIT_REASON_CODES.BUNDLE_CONTENT_OUTSIDE_SELECTION);
   }
+  const groups = new Map<string, SignedAuditEntryV1[]>();
+  for (const entry of entries) {
+    const key = ledgerEpochKey(entry.core);
+    const group = groups.get(key) ?? [];
+    group.push(entry);
+    groups.set(key, group);
+  }
+  const byEpoch = new Map([...groups].map(([key, group]) => [key, epochEntries(group)]));
+  const none: EpochEntries = { ordered: [], hasDuplicateSequence: false, contiguous: true };
   for (const selection of selections) {
-    const selected = entries.filter((entry) =>
-      entry.core.ledgerId === selection.ledgerId &&
-      entry.core.ledgerEpochId === selection.ledgerEpochId);
-    const uniqueBySequence = new Map<string, SignedAuditEntryV1>();
-    let hasDuplicateSequence = false;
-    for (const entry of selected) {
-      if (uniqueBySequence.has(entry.core.sequence)) hasDuplicateSequence = true;
-      else uniqueBySequence.set(entry.core.sequence, entry);
-    }
-    const ordered = [...uniqueBySequence.values()].sort((left, right) => {
-      const leftSequence = BigInt(left.core.sequence);
-      const rightSequence = BigInt(right.core.sequence);
-      return leftSequence < rightSequence ? -1 : leftSequence > rightSequence ? 1 : 0;
-    });
+    const { ordered, hasDuplicateSequence, contiguous } = byEpoch.get(ledgerEpochKey(selection)) ?? none;
     let expectedCount: bigint;
     try {
       expectedCount = BigInt(selection.lastSequence) - BigInt(selection.firstSequence) + 1n;
     } catch {
       reasons.add(AUDIT_REASON_CODES.BUNDLE_SELECTION_INCOMPLETE);
       continue;
-    }
-    let contiguous = true;
-    for (let index = 1; index < ordered.length; index += 1) {
-      if (BigInt(ordered[index]!.core.sequence) !==
-        BigInt(ordered[index - 1]!.core.sequence) + 1n) {
-        contiguous = false;
-        break;
-      }
     }
     if (hasDuplicateSequence || !contiguous || expectedCount < 1n ||
       expectedCount !== BigInt(ordered.length) ||

@@ -52,7 +52,7 @@ describe('checkpoint bindings', () => {
     const { entries, checkpoint } = await recorded();
     const wrongRoot = tampered(checkpoint, { rootDigest: `sha256:${'f'.repeat(64)}` });
     const wrongHead = tampered(checkpoint, { headEntryDigest: entries[0]!.entryDigest });
-    const bind = await checkpointBindings([checkpoint, wrongRoot, wrongHead], entries, new Set(), hasher);
+    const bind = await checkpointBindings([checkpoint, wrongRoot, wrongHead], entries, new Map(), hasher);
 
     expect(bind(checkpoint)).toEqual({ verdict: 'valid', reasonCodes: [] });
     expect(bind(wrongRoot)).toEqual({
@@ -67,8 +67,8 @@ describe('checkpoint bindings', () => {
     const { entries, checkpoint } = await recorded();
     const missing = { verdict: 'invalid', reasonCodes: [AUDIT_REASON_CODES.MERKLE_PROOF_MISSING] };
 
-    const twice = await checkpointBindings([checkpoint], [...entries, entries[1]!], new Set(), hasher);
-    const reordered = await checkpointBindings([checkpoint], [entries[1]!, entries[0]!, ...entries.slice(2)], new Set(), hasher);
+    const twice = await checkpointBindings([checkpoint], [...entries, entries[1]!], new Map(), hasher);
+    const reordered = await checkpointBindings([checkpoint], [entries[1]!, entries[0]!, ...entries.slice(2)], new Map(), hasher);
 
     expect(twice(checkpoint)).toEqual(missing);
     expect(reordered(checkpoint)).toEqual(missing);

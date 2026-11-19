@@ -369,7 +369,7 @@ export async function verifyAuditBundle(
     const binding = await checkpointBindings(
       checkpoints,
       entries,
-      proofs.inclusions,
+      proofs.inclusionCounts,
       dependencies.hasher,
     );
     const checkpointResults: AuditVerificationDimension[] = [];

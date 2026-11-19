@@ -127,15 +127,52 @@ function prefixBinding(
     : dimension('invalid', [AUDIT_REASON_CODES.CHECKPOINT_ROOT_MISMATCH]);
 }
 
+/** How many of `sorted`, ascending, are below `bound`: a binary search. */
+function countBelow(sorted: readonly bigint[], bound: bigint): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (sorted[middle]! < bound) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/**
+ * The entries one epoch carries, each distinct entry once, as an inclusion binding counts them:
+ * their sequences in ascending order, and the entry digests at each sequence.
+ */
+interface CarriedEntries {
+  sequences: bigint[];
+  digestsAt: Map<string, Set<string>>;
+}
+
+function carriedEntries(group: readonly SignedAuditEntryV1[]): CarriedEntries {
+  const sequences: bigint[] = [];
+  const digestsAt = new Map<string, Set<string>>();
+  for (const entry of group) {
+    const { sequence } = entry.core;
+    const digests = digestsAt.get(sequence) ?? new Set<string>();
+    if (digests.has(entry.entryDigest)) continue;
+    digests.add(entry.entryDigest);
+    digestsAt.set(sequence, digests);
+    sequences.push(BigInt(sequence));
+  }
+  sequences.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  return { sequences, digestsAt };
+}
+
 /**
  * How the bundle binds each of its checkpoints to the entries it carries. A checkpoint over a tree
  * no larger than the prefix its epoch carries whole is bound by its recomputed root, all of an
- * epoch's roots computed in one pass; any other, by inclusion proofs for the entries it covers.
+ * epoch's roots computed in one pass; any other, by inclusion proofs for the entries it covers,
+ * counted in `inclusionCounts` by {@link verifyMerkleProofComponents}.
  */
 export async function checkpointBindings(
   checkpoints: readonly SignedAuditCheckpointV1[],
   entries: readonly SignedAuditEntryV1[],
-  verifiedInclusions: ReadonlySet<string>,
+  inclusionCounts: ReadonlyMap<string, number>,
   hasher: AuditHasher,
 ): Promise<(checkpoint: SignedAuditCheckpointV1) => AuditVerificationDimension> {
   const epochs = new Map<string, SignedAuditEntryV1[]>();
@@ -146,6 +183,7 @@ export async function checkpointBindings(
     epochs.set(key, group);
   }
   const prefixes = new Map([...epochs].map(([key, group]) => [key, wholePrefix(group)]));
+  const carried = new Map([...epochs].map(([key, group]) => [key, carriedEntries(group)]));
   const sizes = new Map<string, number[]>();
   for (const checkpoint of checkpoints) {
     const key = ledgerEpochKey(checkpoint.core);
@@ -168,8 +206,11 @@ export async function checkpointBindings(
       const size = Number(treeSize);
       return prefixBinding(checkpoint, prefix[size - 1], roots.get(key)?.get(size));
     }
-    const covered = (epochs.get(key) ?? []).filter((entry) => BigInt(entry.core.sequence) < treeSize);
-    return verifyInclusionBinding(checkpoint, covered, verifiedInclusions);
+    return verifyInclusionBinding(
+      checkpoint,
+      carried.get(key) ?? { sequences: [], digestsAt: new Map() },
+      inclusionCounts.get(checkpointKey(checkpoint.core, checkpoint.checkpointDigest)) ?? 0,
+    );
   };
 }
 
@@ -262,8 +303,11 @@ export function verifyCheckpointHistory(
 
 export interface MerkleProofVerification {
   dimension: AuditVerificationDimension;
-  /** Inclusion proofs that verified, keyed by checkpoint, entry digest, and sequence. */
-  inclusions: Set<string>;
+  /**
+   * How many distinct entries of the bundle an inclusion proof that verified places in each
+   * checkpoint's tree, keyed by the checkpoint's ledger epoch and digest.
+   */
+  inclusionCounts: Map<string, number>;
   /** Consistency proofs that verified, keyed by old and new checkpoint digest. */
   consistencies: Set<string>;
 }
@@ -276,6 +320,7 @@ export async function verifyMerkleProofComponents(
 ): Promise<MerkleProofVerification> {
   const reasons = new Set<string>();
   const inclusions = new Set<string>();
+  const inclusionCounts = new Map<string, number>();
   const consistencies = new Set<string>();
   const tree = new Rfc9162MerkleTree(hasher);
   const checkpointsByKey = firstByKey(checkpoints, (value) =>
@@ -308,7 +353,12 @@ export async function verifyMerkleProofComponents(
       }))) {
       reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_INVALID);
     } else {
-      inclusions.add(inclusionKey(item.checkpointDigest, item.entryDigest, item.sequence));
+      const key = inclusionKey(item.checkpointDigest, item.entryDigest, item.sequence);
+      if (!inclusions.has(key)) {
+        inclusions.add(key);
+        const counted = checkpointKey(item, item.checkpointDigest);
+        inclusionCounts.set(counted, (inclusionCounts.get(counted) ?? 0) + 1);
+      }
     }
   }
 
@@ -341,7 +391,7 @@ export async function verifyMerkleProofComponents(
   }
   return {
     dimension: dimension(reasons.size === 0 ? 'valid' : 'invalid', reasons),
-    inclusions,
+    inclusionCounts,
     consistencies,
   };
 }
@@ -350,24 +400,23 @@ export async function verifyMerkleProofComponents(
  * Without the complete leaf prefix a checkpoint's root cannot be recomputed,
  * so every entry it covers must instead carry a verified inclusion proof
  * against it, and a covered head entry must be the one the checkpoint signed.
+ * A verified proof places a distinct carried entry at its sequence in the
+ * checkpoint's tree, so `proven` falls short of the entries the tree covers
+ * exactly when one of them has none.
  */
 function verifyInclusionBinding(
   checkpoint: SignedAuditCheckpointV1,
-  covered: readonly SignedAuditEntryV1[],
-  verifiedInclusions: ReadonlySet<string>,
+  carried: CarriedEntries,
+  proven: number,
 ): AuditVerificationDimension {
   const reasons = new Set<string>();
-  const headSequence = String(BigInt(checkpoint.core.treeSize) - 1n);
-  for (const entry of covered) {
-    if (!verifiedInclusions.has(
-      inclusionKey(checkpoint.checkpointDigest, entry.entryDigest, entry.core.sequence),
-    )) {
-      reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_MISSING);
-    }
-    if (entry.core.sequence === headSequence &&
-      entry.entryDigest !== checkpoint.core.headEntryDigest) {
-      reasons.add(AUDIT_REASON_CODES.CHECKPOINT_RANGE_MISMATCH);
-    }
+  const treeSize = BigInt(checkpoint.core.treeSize);
+  if (proven < countBelow(carried.sequences, treeSize)) {
+    reasons.add(AUDIT_REASON_CODES.MERKLE_PROOF_MISSING);
+  }
+  const atHead = carried.digestsAt.get(String(treeSize - 1n)) ?? new Set<string>();
+  if ([...atHead].some((entryDigest) => entryDigest !== checkpoint.core.headEntryDigest)) {
+    reasons.add(AUDIT_REASON_CODES.CHECKPOINT_RANGE_MISMATCH);
   }
   return dimension(reasons.size === 0 ? 'valid' : 'invalid', reasons);
 }

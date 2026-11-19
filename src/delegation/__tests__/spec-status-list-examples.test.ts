@@ -14,7 +14,9 @@ import { statusListGzipCodec } from '../../utils/statuslist-gzip.js';
 import { acceptStatusListValidity } from '../../utils/statuslist-validity.js';
 import { BitstringManager } from '../bitstring.js';
 
-const section = /\n### 6\.6 [^]*?\n### 6\.7 /.exec(readFileSync(fileURLToPath(new URL('../../../SPEC.md', import.meta.url)), 'utf8'))![0];
+// A Windows checkout may write the file with CRLF line endings; the patterns below read LF.
+const spec = readFileSync(fileURLToPath(new URL('../../../SPEC.md', import.meta.url)), 'utf8').replace(/\r\n/g, '\n');
+const section = /\n### 6\.6 [^]*?\n### 6\.7 /.exec(spec)![0];
 const examples = [...section.matchAll(/```json\n([^]*?)```/g)].map((match) => JSON.parse(match[1]!) as Record<string, unknown>);
 const membersOf = (value: unknown) => Object.keys(value as object).sort();
 const DAY_MS = 24 * 60 * 60 * 1000;

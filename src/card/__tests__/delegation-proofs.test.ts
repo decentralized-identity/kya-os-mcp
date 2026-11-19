@@ -155,10 +155,12 @@ describe('evaluateDelegationChain proofs before status', () => {
 
   it('verifies the received credential with all its signed extension members', async () => {
     const { p, chain, check, ctx } = fixture();
-    const unsigned = Object.fromEntries(Object.entries(chain[0]).filter(([key]) => key !== 'proof'));
-    chain[0] = signEddsaJcs2022({
-      ...unsigned, extension: { binding: 'signed' }, credentialStatus: { ...chain[0].credentialStatus, extension: 'signed' },
-    }, p.acme) as DelegationCredential;
+    const unsigned: Record<string, unknown> = {
+      ...Object.fromEntries(Object.entries(chain[0]).filter(([key]) => key !== 'proof')),
+      extension: { binding: 'signed' },
+      credentialStatus: { ...chain[0].credentialStatus, extension: 'signed' },
+    };
+    chain[0] = signEddsaJcs2022(unsigned, p.acme) as DelegationCredential;
     const verify = vi.fn(createDelegationProofVerifier({ didResolver }));
     expect(await evaluateDelegationChain(chain, check, { ...ctx, verifyHopProof: verify })).toMatchObject({ ok: true });
     expect(verify.mock.calls[0]?.[0]).toBe(chain[0]);

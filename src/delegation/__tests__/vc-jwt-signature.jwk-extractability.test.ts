@@ -6,16 +6,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { verifyVcJwtSignature } from '../vc-jwt-verify.js';
-import type { DIDResolver } from '../vc-verifier.types.js';
+import type { DIDResolver, VerificationMethod } from '../vc-verifier.types.js';
 import { issuerDidDocument, methodOf } from '../../__tests__/utils/did-documents.js';
 import { keyOf, signedJwt } from '../../__tests__/utils/delegation-credentials.js';
 import { forgedJws, IDENTITY } from '../../__tests__/utils/small-order.js';
 import { generateDidKeyFromBytes } from '../../utils/did-helpers.js';
-import type { VerificationMethod } from '../../types/protocol.js';
 
 /** A resolver whose document publishes `method` with its JWK's `ext` member as `extractability` says. */
 function publishing(method: VerificationMethod, extractability: { ext?: boolean }): DIDResolver {
-  const published = { ...method, publicKeyJwk: { ...method.publicKeyJwk, ...extractability } };
+  const published = { ...method, publicKeyJwk: { ...(method.publicKeyJwk as Record<string, unknown>), ...extractability } };
   return { resolve: async () => issuerDidDocument(published as VerificationMethod) };
 }
 

@@ -14,9 +14,10 @@ export function sameSigner(left: SignerRef, right: SignerRef): boolean {
   return left.did === right.did && left.kid === right.kid && left.alg === right.alg;
 }
 
-export function keyIsValidAt(policy: HistoricalAuditKeyPolicy, at: number): boolean {
-  return (policy.validFrom === undefined || at >= policy.validFrom) &&
-    (policy.validUntil === undefined || at <= policy.validUntil);
+/** Whether `at` falls inside a validity interval whose bounds are inclusive and optional. */
+export function validAt(interval: { validFrom?: number; validUntil?: number }, at: number): boolean {
+  return (interval.validFrom === undefined || at >= interval.validFrom) &&
+    (interval.validUntil === undefined || at <= interval.validUntil);
 }
 
 export interface CheckpointBounds {
@@ -77,7 +78,7 @@ export function keyTrust(
   const epoch = positionWithin(epochBounds, ledger, position, boundaries);
   let best: BoundStatus = 'outside';
   for (const key of keys) {
-    if (!sameSigner(key.signer, signer) || !keyIsValidAt(key, at)) continue;
+    if (!sameSigner(key.signer, signer) || !validAt(key, at)) continue;
     const status = strictest(epoch, positionWithin(key, ledger, position, boundaries));
     if (status === 'within') return status;
     if (status === 'unresolved') best = status;
@@ -95,6 +96,6 @@ export function keyIsCurrent(
   signer: SignerRef,
   now: number,
 ): boolean {
-  return keys.some((key) => sameSigner(key.signer, signer) && keyIsValidAt(key, now) &&
+  return keys.some((key) => sameSigner(key.signer, signer) && validAt(key, now) &&
     key.validUntilCheckpoint === undefined);
 }

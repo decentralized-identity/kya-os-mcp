@@ -1655,11 +1655,11 @@ A caller chooses what it presents, so anyone can have a server sign a reference 
 The digest of a refusal covers the credentials the server had examined when it refused, root first:
 
 - A call refused after its chain verified (on scope, on holder binding, by policy, or by the handler): the whole chain.
-- A chain refused part way through: the ancestors examined, up to and including the one the server stopped at, then the presented credential.
+- A chain refused part way through, once the presented credential passed its own checks: the ancestors examined, up to and including the one the server stopped at, then the presented credential.
   The ancestors after that one are not covered, although the server may have read them to assemble the chain.
 - A presentation refused before any ancestor was examined: the presented credential alone.
   That is a VC-JWT whose header or payload is not read as JSON, or whose claims are not a delegation credential's, a credential object that is not a delegation credential, ancestors that could not be resolved into a chain of delegation credentials, a chain longer than the server evaluates (§6.4), and a chain whose links, or whose root's issuer, the server refuses, which it checks before it verifies any credential.
-  A VC-JWT whose envelope signature does not verify is refused when the server reaches it, after its ancestors, as the last credential of a chain refused part way through.
+  So is a presented credential the server refuses on its own, as one that does not verify, a VC-JWT whose envelope signature does not among them, or whose audience does not admit the server: the server examines the presented credential before any ancestor, so that a party who cannot sign as its parent's subject costs no ancestor's verification and learns nothing of an ancestor's standing.
 - No digest, whichever case above the refusal is, when the presented value has no signed form, when a credential the server examined has none, or when a value handed to the server for the chain could not be read at all.
   A credential object nested past the bound has no signed form, and the server does not read one handed to it for the chain, nor a value that is not JSON data, such as an in-process object that is not plain data.
   The proof carries `delegationRef` where the presented value shows an id.

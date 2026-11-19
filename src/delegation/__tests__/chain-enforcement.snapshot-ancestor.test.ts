@@ -39,8 +39,11 @@ describe("validateDelegationChain: snapshotAncestor", () => {
     expect(evaluated[0]).not.toBe(root);
     expect(evaluated[1]).not.toBe(middle);
     expect(evaluated[2]).toBe(leaf);
+    // The leaf is verified first, then each ancestor's copy, root first.
     expect(verified).toHaveLength(3);
-    for (const [index, credential] of verified.entries()) expect(credential).toBe(evaluated[index]);
+    expect(verified[0]).toBe(leaf);
+    expect(verified[1]).toBe(evaluated[0]);
+    expect(verified[2]).toBe(evaluated[1]);
   });
 
   it("holds every check to the copy: an ancestor that changes after it was read is checked and reported as it was read", async () => {
@@ -99,9 +102,9 @@ describe("validateDelegationChain: snapshotAncestor", () => {
       },
     });
     expect(result.valid).toBe(false);
-    expect(order).toEqual(["copy root", "copy middle", "copy leaf copy", "verify root"]);
-    // Copied is not examined: the walk stopped at the root.
-    expect(result.evaluated).toEqual([root]);
+    expect(order).toEqual(["copy root", "copy middle", "copy leaf copy", "verify leaf", "verify root"]);
+    // The presented leaf was examined first; of the copies, only the root was: the walk stopped there.
+    expect(result.evaluated).toEqual([root, leaf]);
   });
 
   it.each([
@@ -158,7 +161,7 @@ describe("validateDelegationChain: snapshotAncestor", () => {
       // Read as the leaf, it is the resolver's copy of the leaf and is set
       // aside: the leaf presented is then held to the root, which is not its
       // parent. Links are checked before any credential is verified, so none was.
-      expect(result.reason).toBe("Delegation leaf references parent middle but expected root");
+      expect(result.reason).toBe("Delegation leaf references parent middle, which its resolved chain does not end with");
       expect(result).not.toHaveProperty("evaluated");
     }
   });

@@ -10,15 +10,25 @@
  * operator's log, and the reason says only what failed.
  */
 
+import { logger } from "../logging/index.js";
 import { describeValue } from "../utils/describe-value.js";
 import { sanitizeForMessage } from "../utils/message-text.js";
 import { refusal, type Refusal } from "../utils/refusal.js";
-import { readRevocationAnswer, WRAPPED_REASON_LENGTH } from "../utils/revocation-answer.js";
+import { OPERATOR_REASON_LENGTH, readRevocationAnswer, WRAPPED_REASON_LENGTH } from "../utils/revocation-answer.js";
 import { thrownReason } from "../utils/thrown-words.js";
 
 /** `opening`, then the words of `error` where they may be shown, or else `failed`, with the words logged. */
 function thrownByHost(error: unknown, opening: string, failed: string): string {
   return thrownReason(error, { withheld: `${opening}: ${failed}`, shown: (words) => `${opening}: ${words}`, tag: "[kya-os]" });
+}
+
+/**
+ * `said`, the reason a refusal gives whoever presented the delegation, having told the operator's
+ * log what it withholds there: `withheld`, a reason that names what the chain resolver answered.
+ */
+export function presentedReason(said: string, withheld: string): string {
+  logger.warn(`[kya-os] ${said}: ${sanitizeForMessage(withheld, OPERATOR_REASON_LENGTH)}`);
+  return said;
 }
 
 /** Why a chain is refused when its resolver threw `error`. */

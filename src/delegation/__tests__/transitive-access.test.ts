@@ -769,7 +769,7 @@ describe('Transitive Access — Karp Use Cases', () => {
       expect(parsed.error).toBe('delegation_invalid');
       // Eve's DID ≠ Bob's DID (the parent's subject)
       expect(parsed.reason).toContain('issued by');
-      expect(parsed.reason).toContain('parent subject');
+      expect(parsed.reason).toContain('is not a re-delegation by the subject of parent');
     });
 
     it('rejects a chain where the leaf references a non-existent parent', async () => {

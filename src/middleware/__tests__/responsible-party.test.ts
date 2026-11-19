@@ -107,14 +107,15 @@ describe('the Responsible Party the delegation gate names', () => {
     const rootRecord = delegationRecord(ALICE, { subjectDid: delegate.did, constraints: s.constraints });
     const leafRecord = delegationRecord(delegate.did, { subjectDid: AGENT, parentId: rootRecord.id, constraints: s.constraints });
     const refusals = [
-      [solo.id, await s.call(undefined, await credentialNaming(root, root.did, root.kid, solo))],
-      [rootRecord.id, await s.call(undefined, await signedCredential(delegate, { record: leafRecord }), [await credentialNaming(root, root.did, root.kid, rootRecord)])],
+      // Presented, the root is quoted; resolved, it is the resolver's answer, which the presenter is not told.
+      [`Root delegation ${solo.id} names issuerDid "${ALICE}" but its credential names issuer "${root.did}"`, await s.call(undefined, await credentialNaming(root, root.did, root.kid, solo))],
+      [
+        `Delegation ${leafRecord.id} does not descend from a root through the chain its parent resolves to`,
+        await s.call(undefined, await signedCredential(delegate, { record: leafRecord }), [await credentialNaming(root, root.did, root.kid, rootRecord)]),
+      ],
     ];
-    for (const [id, refusal] of refusals) {
-      expect(JSON.parse(refusal!)).toEqual({
-        error: 'delegation_invalid',
-        reason: `Root delegation ${id} names issuerDid "${ALICE}" but its credential names issuer "${root.did}"`,
-      });
+    for (const [reason, refusal] of refusals) {
+      expect(JSON.parse(refusal!)).toEqual({ error: 'delegation_invalid', reason });
     }
     expect(s.contexts).toHaveLength(0);
     expect(namedBy(s.events, 'delegation.verified')).toEqual([]);

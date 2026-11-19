@@ -98,11 +98,12 @@ describe('root admission before DID and status resolution', () => {
     const leaf = await credential(delegate, 'leaf', 'good-root');
     const resolveDelegationChain = vi.fn(async (_leaf: DelegationCredential) => [parent]);
     const { verify, resolve } = setup({ resolveDelegationChain });
-    // Signed with an outsider's key: the envelope's signature is checked only after the chain is resolved.
+    // Signed with an outsider's key: the envelope's signature is checked only after the chain is
+    // resolved, and before any ancestor's, so no ancestor's key is resolved for it.
     expect((await verify(await jwt(leaf, outsider))).valid).toBe(false);
     expect(resolveDelegationChain).toHaveBeenCalledOnce();
     expect(resolveDelegationChain.mock.calls[0]![0].credentialSubject.delegation).toMatchObject({ id: 'leaf', parentId: 'good-root' });
-    expect(resolve.mock.calls[0]).toEqual([root.did]);
+    expect(resolve.mock.calls.map(([did]) => did)).toEqual([delegate.did]);
   });
 
   for (const form of ['object', 'JWT'] as const) {
@@ -162,7 +163,8 @@ describe('root admission before DID and status resolution', () => {
       const { verify, resolve, isRevoked } = setup({ resolveDelegationChain });
       expect((await verify(await wire(leaf, delegate))).valid).toBe(true);
       expect(resolveDelegationChain).toHaveBeenCalledOnce();
-      expect(resolve.mock.calls.map(([did]) => did)).toEqual([root.did, delegate.did]);
+      // The presented leaf is verified first, then its ancestors.
+      expect(resolve.mock.calls.map(([did]) => did)).toEqual([delegate.did, root.did]);
       expect(isRevoked.mock.calls).toHaveLength(2);
       // A good ancestor must not turn an invalid leaf into an authenticated one.
       const bad = await credential(outsider, 'bad-leaf', 'good-root');
@@ -200,7 +202,8 @@ describe('root admission before DID and status resolution', () => {
       const leaf = await credential(delegate, 'leaf', 'good-root');
       const { verify, resolve, isRevoked } = setup({ resolveDelegationChain: async () => [parent] });
       expect(await verify(await wire(leaf, delegate))).toMatchObject({
-        valid: false, reason: 'Resolved delegation chain is incomplete: root delegation good-root still references parent gone',
+        // The root is the resolver's answer, which the presenter is not told.
+        valid: false, reason: 'Delegation leaf does not descend from a root through the chain its parent resolves to',
       });
       expect(resolve).not.toHaveBeenCalled();
       expect(isRevoked).not.toHaveBeenCalled();

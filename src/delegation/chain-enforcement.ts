@@ -27,6 +27,7 @@ import { attenuationWarnings, checkScopeAttenuation, statedExpiry } from "./chai
 import {
   chainResolutionFailure,
   credentialVerificationFailure,
+  presentedReason,
   revocationCheckFailure,
   revocationRefusal,
   unreadableChainAnswer,
@@ -176,6 +177,9 @@ export interface ChainValidationResult extends EvaluatedCredentials, RefusalCodi
  * agent signs for itself included, and neither throws nor warns: unlike the
  * `withKyaOs` gate, which refuses to run with no root pinned, it leaves
  * pinning the root to its caller.
+ * The presented credential is verified before any ancestor, and a refusal of the
+ * chain the resolver returned tells the presenter only what the presented
+ * credential states, the ancestors it withholds going to the operator's log.
  * Success includes the earliest applicable expiry for downstream grant storage.
  * Never throws on a malformed input, nor when a dependency throws or answers
  * what it may not; returns `{ valid, reason }`, and on a refusal the `code`
@@ -261,112 +265,90 @@ async function enforceChain(
 
   // Structure, then trust, then proofs. The linkage of every credential, and then the root by the
   // issuer it names, are checked before any credential is verified, so a broken chain or an
-  // untrusted root costs no DID, signature or status resolution; verifying each credential below,
-  // root first, authenticates the issuer it names. Only the root is admitted: a delegated leaf need
-  // not be a trusted root issuer. The application's `resolveDelegationChain` above runs first and
-  // bounds its own I/O.
-  const linkageRefusal = chainLinkageRefusal(chain);
-  if (linkageRefusal !== undefined) return refusal("chain_invalid", linkageRefusal);
-  const rootRefusal = rootAdmissionRefusal(chain[0]!, deps.trustedRootIssuers);
+  // untrusted root costs no DID, signature or status resolution; verifying each credential below
+  // authenticates the issuer it names. Only the root is admitted: a delegated leaf need not be a
+  // trusted root issuer. The application's `resolveDelegationChain` above runs first and bounds its
+  // own I/O. What the resolver answered is the operator's to read: a refusal of it tells the
+  // presenter only what the presented credential states (`chainLinkageRefusal`).
+  const linkage = chainLinkageRefusal(chain);
+  if (linkage !== undefined) {
+    return refusal("chain_invalid", linkage.logged === undefined ? linkage.reason : presentedReason(linkage.reason, linkage.logged));
+  }
+  const rootRefusal = admissionRefusal(chain, deps.trustedRootIssuers);
   if (rootRefusal !== undefined) return rootRefusal;
 
-  // Every result of the walk carries the credentials it reached.
-  const evaluated: DelegationCredential[] = [];
-  return { ...(await walkChain(chain, evaluated, leafCredential, leafDelegation, deps, timeoutMs, options)), evaluated };
+  // Every result of the walk carries the credentials it reached, root first.
+  const reached: Reached = { ancestors: 0, presented: false };
+  const verdict = await walkChain(chain, reached, leafDelegation, deps, timeoutMs, options);
+  const evaluated = [...chain.slice(0, reached.ancestors), ...(reached.presented ? [leafCredential] : [])];
+  return { ...verdict, evaluated };
 }
 
 /**
- * The per-credential and per-link checks of a chain, adding each credential reached to `evaluated`.
- * Each credential verification and each revocation check gets `timeoutMs` to answer.
+ * Why the root of `chain` is not admitted under `trustedRootIssuers` ({@link rootAdmissionRefusal}),
+ * or `undefined`. A root the chain resolver returned, which its presenter did not write, is named
+ * only in the operator's log: the presenter is told, under the same code, that the presented
+ * credential descends from a root that is not admitted.
+ */
+function admissionRefusal(chain: readonly DelegationCredential[], trustedRootIssuers: readonly string[] | undefined): Refusal | undefined {
+  const refused = rootAdmissionRefusal(chain[0]!, trustedRootIssuers);
+  if (refused === undefined || chain.length === 1 || refused.code === "configuration_error") return refused;
+  const leafId = extractDelegationFromVC(chain[chain.length - 1]!).id;
+  const said = refused.code === "untrusted_root"
+    ? `Delegation ${leafId} descends from a root whose issuer is not a trusted root issuer`
+    : `Delegation ${leafId} descends from a root whose credential names no issuer`;
+  return refusal(refused.code, presentedReason(said, refused.reason ?? said));
+}
+
+/** How far the walk of a chain reached: how many of its ancestors, root first, and the presented credential. */
+interface Reached {
+  ancestors: number;
+  presented: boolean;
+}
+
+/**
+ * The per-credential and per-link checks of a chain, recording in `reached` each credential they
+ * reach. The presented credential, the chain's last, is verified first, so a presenter who cannot
+ * sign as its parent's subject costs no ancestor's verification and learns nothing of an
+ * ancestor's standing; then each ancestor, root first, with the link from the one before it; then
+ * the presented credential's link from its parent. Each credential verification and each
+ * revocation check gets `timeoutMs` to answer.
  */
 async function walkChain(
   chain: readonly DelegationCredential[],
-  evaluated: DelegationCredential[],
-  leafCredential: DelegationCredential,
+  reached: Reached,
   leafDelegation: DelegationRecord,
   deps: ChainEnforcementDeps,
   timeoutMs: number,
   options?: { skipSignature?: boolean },
 ): Promise<ChainVerdict> {
-  let expiresAt: number | undefined;
+  const leafCredential = chain[chain.length - 1]!;
+  const expiry: { at?: number } = {};
   const warnings: string[] = [];
+
+  reached.presented = true;
+  const presentedRefusal = await credentialRefusal(leafCredential, expiry, deps, timeoutMs, options?.skipSignature === true);
+  if (presentedRefusal !== undefined) return presentedRefusal;
+
   let previousCredential: DelegationCredential | undefined;
-
-  for (const credential of chain) {
-    evaluated.push(credential);
-    const delegation = extractDelegationFromVC(credential);
-
-    if (credential.credentialStatus && !deps.statusListConfigured) {
-      return refusal(
-        "configuration_error",
-        `Delegation ${delegation.id} has credentialStatus but no statusListResolver is configured`,
-      );
+  for (const credential of chain.slice(0, -1)) {
+    reached.ancestors += 1;
+    const ancestorRefusal = await credentialRefusal(credential, expiry, deps, timeoutMs, false);
+    if (ancestorRefusal !== undefined) return ancestorRefusal;
+    if (previousCredential !== undefined) {
+      const linkRefusal = attenuationRefusal(previousCredential, credential, warnings);
+      if (linkRefusal !== undefined) return linkRefusal;
     }
-
-    // The verifier is a port the host may supply, under the same deadline as every other: a
-    // credential passes only on the literal `true`. Its reason is kept as far as the operator reads
-    // one, so a status reason it ends with stays whole.
-    let verdict: unknown;
-    try {
-      const { verifier } = deps;
-      const skip = options?.skipSignature && credential === leafCredential ? { skipSignature: true } : {};
-      verdict = await answerWithinDeadline("the credential verifier", () => verifier.verifyDelegationCredential(credential, skip), timeoutMs);
-    } catch (error) {
-      return refusal(refusalCodeOf(error, "runtime_error"), credentialVerificationFailure(delegation.id, error));
-    }
-    const credentialVerification = readVerdict("the credential verifier", verdict, "delegation_invalid", OPERATOR_REASON_LENGTH);
-    if (!credentialVerification.valid) {
-      return {
-        valid: false,
-        reason: `Delegation ${delegation.id} invalid: ${credentialVerification.reason}`,
-        ...coded(credentialVerification.code),
-      };
-    }
-
-    // Use the already-verified walk so grant lifetime cannot outlive a shorter
-    // ancestor or constraint. Expiry/status are still rechecked on every call.
-    const deadline = statedExpiry(credential);
-    if (deadline !== undefined) {
-      expiresAt = Math.min(expiresAt ?? deadline, deadline);
-    }
-
-    if (!verifyDelegationAudience(delegation, deps.serverDid)) {
-      return refusal("chain_invalid", `Delegation ${delegation.id} audience does not include server DID ${deps.serverDid}`);
-    }
-
-    // Every non-root credential in the chain MUST carry an `audience` constraint
-    // binding it to the verifying server. This closes the confused-deputy class
-    // where a re-delegated credential is forwarded to an unintended server
-    // (KYA-OS §11.6). Unconditional as of 1.4.0.
-    if (delegation.parentId && !delegation.constraints.audience) {
-      return refusal(
-        "chain_invalid",
-        `Delegation ${delegation.id} is a re-delegation (parentId: ${delegation.parentId}) but has no audience constraint. Re-delegations MUST include an audience constraint (KYA-OS §11.6)`,
-      );
-    }
-
-    // The chain's linkage was checked before any verification
-    // (chainLinkageRefusal), so each credential's issuerDid is the issuer
-    // whose key the verifier checked, the root's included.
-    if (!previousCredential) {
-      previousCredential = credential;
-      continue;
-    }
-
-    const scopeValidation = checkScopeAttenuation(previousCredential, credential);
-    if (!scopeValidation.valid) {
-      return scopeValidation;
-    }
-    const constraintValidation = checkConstraintAttenuation(previousCredential, credential);
-    if (!constraintValidation.valid) {
-      return constraintValidation;
-    }
-    warnings.push(...attenuationWarnings(previousCredential, credential));
-
     previousCredential = credential;
   }
+  if (previousCredential !== undefined) {
+    const linkRefusal = attenuationRefusal(previousCredential, leafCredential, warnings);
+    if (linkRefusal !== undefined) return linkRefusal;
+  }
+  const expiresAt = expiry.at;
 
-  const finalDelegation = extractDelegationFromVC(chain[chain.length - 1]!);
+  // Read again after the walk: a leaf that is not stable data may answer another id by now.
+  const finalDelegation = extractDelegationFromVC(leafCredential);
   if (finalDelegation.id !== leafDelegation.id) {
     return refusal(
       "chain_invalid",
@@ -402,4 +384,89 @@ async function walkChain(
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
   };
+}
+
+/**
+ * Why `credential` is refused on its own: a status entry with no status list resolver configured,
+ * the verifier's answer (with `skipSignature` when the caller authenticated its envelope), an
+ * audience that does not admit the server, or a re-delegation that states no audience. A
+ * credential that passes lowers `expiry.at` to the earliest expiry it states.
+ */
+async function credentialRefusal(
+  credential: DelegationCredential,
+  expiry: { at?: number },
+  deps: ChainEnforcementDeps,
+  timeoutMs: number,
+  skipSignature: boolean,
+): Promise<Refusal | undefined> {
+  const delegation = extractDelegationFromVC(credential);
+
+  if (credential.credentialStatus && !deps.statusListConfigured) {
+    return refusal(
+      "configuration_error",
+      `Delegation ${delegation.id} has credentialStatus but no statusListResolver is configured`,
+    );
+  }
+
+  // The verifier is a port the host may supply, under the same deadline as every other: a
+  // credential passes only on the literal `true`. Its reason is kept as far as the operator reads
+  // one, so a status reason it ends with stays whole.
+  let verdict: unknown;
+  try {
+    const { verifier } = deps;
+    const skip = skipSignature ? { skipSignature: true } : {};
+    verdict = await answerWithinDeadline("the credential verifier", () => verifier.verifyDelegationCredential(credential, skip), timeoutMs);
+  } catch (error) {
+    return refusal(refusalCodeOf(error, "runtime_error"), credentialVerificationFailure(delegation.id, error));
+  }
+  const credentialVerification = readVerdict("the credential verifier", verdict, "delegation_invalid", OPERATOR_REASON_LENGTH);
+  if (!credentialVerification.valid) {
+    return {
+      valid: false,
+      reason: `Delegation ${delegation.id} invalid: ${credentialVerification.reason}`,
+      ...coded(credentialVerification.code),
+    };
+  }
+
+  // Use the already-verified walk so grant lifetime cannot outlive a shorter
+  // ancestor or constraint. Expiry/status are still rechecked on every call.
+  const deadline = statedExpiry(credential);
+  if (deadline !== undefined) {
+    expiry.at = Math.min(expiry.at ?? deadline, deadline);
+  }
+
+  if (!verifyDelegationAudience(delegation, deps.serverDid)) {
+    return refusal("chain_invalid", `Delegation ${delegation.id} audience does not include server DID ${deps.serverDid}`);
+  }
+
+  // Every non-root credential in the chain MUST carry an `audience` constraint
+  // binding it to the verifying server. This closes the confused-deputy class
+  // where a re-delegated credential is forwarded to an unintended server
+  // (KYA-OS §11.6). Unconditional as of 1.4.0.
+  if (delegation.parentId && !delegation.constraints.audience) {
+    return refusal(
+      "chain_invalid",
+      `Delegation ${delegation.id} is a re-delegation (parentId: ${delegation.parentId}) but has no audience constraint. Re-delegations MUST include an audience constraint (KYA-OS §11.6)`,
+    );
+  }
+  return undefined;
+}
+
+/**
+ * Why `child` is wider than `parent`, its parent in a chain whose linkage was checked before any
+ * verification (`chainLinkageRefusal`), so each credential's issuerDid is the issuer whose key the
+ * verifier checked: by its scopes or by its other constraints. A child that is not refused adds to
+ * `warnings` each way it may still be wider ({@link attenuationWarnings}).
+ */
+function attenuationRefusal(
+  parent: DelegationCredential,
+  child: DelegationCredential,
+  warnings: string[],
+): Refusal | undefined {
+  const scopeValidation = checkScopeAttenuation(parent, child);
+  if (!scopeValidation.valid) return scopeValidation;
+  const constraintValidation = checkConstraintAttenuation(parent, child);
+  if (!constraintValidation.valid) return constraintValidation;
+  warnings.push(...attenuationWarnings(parent, child));
+  return undefined;
 }

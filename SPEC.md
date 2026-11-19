@@ -356,7 +356,7 @@ The reader reads such a response through its `text()`, which must answer a strin
 It waits for that answer within the read's one deadline, counts the UTF-8 bytes of the text against the same byte cap, and holds the text to the same JSON limits before it parses it.
 The provider has by then held the whole body, so only the provider bounds what that costs.
 
-A status list holds at least 131,072 entries, 16 KiB, under both StatusList2021 and Bitstring Status List 1.0, gzip-compressed and base64url-encoded in its credential.
+A status list a publisher writes holds at least 131,072 entries, 16 KiB, under both StatusList2021 and Bitstring Status List 1.0, GZIP-compressed and encoded in its credential as §6.6 states; during 1.x a reader also reads a shorter list (§6.6).
 An incompressible list of that minimum encodes to about 22 KB, and 1 MiB holds an incompressible list of about 6.3 million entries, 48 times the minimum; a list with few entries set compresses to a few hundred bytes.
 A credential's status list is read only after the credential's own signature has verified, and in a delegation chain only after the chain's links have been checked, so a credential that merely names an issuer causes no status read.
 `DelegationCredentialVerifier` reports a status it did not read as not checked: when the signature fails, its result's `checks` has no `statusValid`.
@@ -875,10 +875,25 @@ KYA-OS uses the W3C StatusList2021 specification for revocation:
     "id": "https://example.com/status/1#list",
     "type": "StatusList2021",
     "statusPurpose": "revocation",
-    "encodedList": "<gzip-compressed-base64-bitstring>"
+    "encodedList": "uH4sIAAAAAAAAA-3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAIC3AYbSVKsAQAAA"
   }
 }
 ```
+
+The example's `encodedList` is a list of 131,072 entries with none set, the list of the [STATUS-LIST-2021] example written in the form below.
+
+**Encoding.** Under both StatusList2021 and Bitstring Status List v1.0, a list's `encodedList` is the multibase prefix `u` followed by the base64url encoding (RFC 4648 §5), without padding, of the GZIP (RFC 1952) compression of the list's bitstring, in which the entry at index 0 is the most significant bit of the first byte, as Bitstring Status List v1.0 §2.2 and §3.3 write it.
+A publisher MUST write `encodedList` in that form.
+For the 1.x line, a reader MUST also accept an `encodedList` in the legacy forms the reference implementation reads, alone or together: with no `u`; with any of its characters in the base64 alphabet (RFC 4648 §4), `+` standing for `-` and `/` for `_`; and with `=` after its last character, no more of them than complete its last group of four characters.
+They are the forms a publisher that follows [STATUS-LIST-2021] may write: it names no multibase prefix, its example has none, and it calls the encoding base-64 (RFC 4648), which admits the base64 alphabet and padding.
+A reader MAY refuse an `encodedList` in any other form, such as one with white space, another multibase prefix, a last group of one character, or `=` before a character.
+2.0.0 removes the legacy forms.
+
+**Length.** A publisher MUST write a list of at least 131,072 entries, 16 KiB uncompressed, as Bitstring Status List v1.0 §2.2 requires, so that each credential's entry is one among many.
+The reference implementation's `StatusList2021Manager` writes 131,072 entries unless its `defaultListSize` option sets another size; a size below 131,072 writes a list this rule forbids.
+For the 1.x line, for compatibility, a reader MUST NOT refuse a list for holding fewer entries.
+Bitstring Status List v1.0 §3.2 refuses such a list (step 9) unless a specification sets another lower bound (step 2), and this one sets none for 1.x; 2.0.0 refuses a list of fewer than 131,072 entries.
+Whatever its length, a list holds no entry at or past its end, so an index there is rejected (§6.7).
 
 A verifier that reads a `StatusList2021Credential` MUST verify its proof, as
 §6.2 states, before reading any bit. A list whose proof does not verify is
@@ -989,9 +1004,10 @@ from local state.
 
 Orchestration scope is service-local; directory federation is out of scope for this version. Delegation graphs and revocation state are managed within a single service boundary and are not synchronized across independent KYA-OS deployments or external agent directories (e.g. NANDA).
 
-- Each delegation is assigned a `statusListIndex` (0 to 131071)
+- Each delegation is assigned a `statusListIndex`, which MUST be less than the number of entries its list holds: 0 to 131071 in a list of 131,072 entries, and more in a longer one
+- A credential whose index is at or past its list's end is rejected, as Bitstring Status List v1.0 §3.2 (step 10) raises a range error for it
 - Bit at index is 0 = valid, 1 = revoked
-- Bitstring is gzip-compressed and base64-encoded
+- The bitstring is encoded as §6.6 states
 
 ### 6.8 Protocol Registry
 
@@ -1146,7 +1162,7 @@ chain (the `resource` context of `evaluateDelegationChain`), so that a chain min
 different resource fails at the root check instead of being accepted by an unrelated Verifier.
 
 **Revocation.** Revocation uses **W3C Bitstring Status List v1.0** [BITSTRING-STATUS-LIST] (`BitstringStatusListEntry`) - the **successor to** the deprecated StatusList2021 - behind a pluggable `RevocationChecker` seam so status-list churn never reaches callers.
-The default checker resolves `statusListCredential` via SafeFetch (SPEC-ENTITY-CARD.md §6.6), inflates the multibase (`u` = base64url) + GZIP `encodedList`, and reads the bit at `statusListIndex` MSB-first within each byte.
+The default checker resolves `statusListCredential` via SafeFetch (SPEC-ENTITY-CARD.md §6.6), inflates the multibase (`u` = base64url) + GZIP `encodedList`, or a 1.x legacy form of it (§6.6), and reads the bit at `statusListIndex` MSB-first within each byte.
 A verifier MUST verify the status list credential's proof before it reads a bit, as Bitstring Status List v1.0 requires.
 The reference checker does so when given its `verifyStatusList` seam (optional until 2.0) and ships a verifier for `eddsa-jcs-2022` lists.
 With that seam it also holds each hop's list to the keeper §6.6 names for the URL of the hop's entry: the issuer its `statusListIssuers` option binds the URL or its origin to, else the chain's root issuer when the verifier pins it with its trusted root issuers or the resource owner it asserts and the root hop's own entry names the same URL, else the hop's own issuer.

@@ -20,7 +20,7 @@ if __name__ == "__main__":
     # path (-I, -P); put it on, as verify.py does, so the module beside this one is found.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from base64url import padded_base64url_bytes, signature_bytes, strict_base64url_bytes
+from base64url import encoded_list_bytes, signature_bytes, strict_base64url_bytes
 
 
 def issuer(value):
@@ -256,8 +256,7 @@ def verify_input(value, canonicalize, verify_signature):
         index = int(digits)
         if index > 2 ** 53 - 1:
             return False
-        encoded = document["credentialSubject"]["encodedList"]
-        compressed = padded_base64url_bytes(encoded[1:] if encoded.startswith("u") else encoded)
+        compressed = encoded_list_bytes(document["credentialSubject"]["encodedList"])
         # Bound output while inflating, not after a gzip bomb has allocated it.
         with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as stream:
             bits = stream.read(16 * 1024 * 1024 + 1)

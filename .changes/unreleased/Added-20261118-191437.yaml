@@ -1,0 +1,16 @@
+kind: Added
+body: |-
+    **A delegation graph can read whose each status list entry is.**
+    `allocateStatusEntry(purpose, { delegationId })` records the entry's
+    owner, and `getStatusEntryOwner` and `retireStatusEntry` read and retire
+    it, through the optional `StatusEntryOwnerStorageProvider` contract that
+    `MemoryStatusListStorage` implements. `DelegationGraphManager` takes the
+    manager as `statusEntryOwners`, registers a delegation only with an
+    entry allocated to it, retires the entry when it removes the delegation,
+    and answers `getStatusEntryClaim`. A graph storage provider can
+    implement `getNodeIdsByStatusEntry`, keyed by `statusEntryKey`.
+    `StatusEntryUnchangedError` reports each entry a revocation or restore
+    left unchanged, with its `events`, and `RevocationEvent` gains
+    `statusEntrySharedWith`. UPGRADING.md, "A delegation's status entry is
+    the one allocated for it", has the detail.
+time: 2026-11-18T19:14:37.000000-06:00

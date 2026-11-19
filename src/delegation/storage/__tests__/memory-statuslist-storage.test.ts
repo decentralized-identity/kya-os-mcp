@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { MemoryStatusListStorage } from "../memory-statuslist-storage.js";
 import { OwnMapStore } from "../../__tests__/helpers/status-list-writers.js";
 import type { StatusList2021Credential } from "../../../types/protocol.js";
+import type { StatusEntryOwnerStorageProvider } from "../../status-entry-owner.js";
+import type { ConditionalStatusListStorageProvider } from "../../statuslist-storage.js";
 
 describe("MemoryStatusListStorage", () => {
   let storage: MemoryStatusListStorage;
@@ -359,6 +361,62 @@ describe("MemoryStatusListStorage", () => {
 
       expect(storage.getIndexCount(statusListId)).toBe(0);
     });
+  });
+
+  describe("setEntryOwner and getEntryOwner", () => {
+    it("record the owner of each entry of each list, and replace it when the entry is retired", async () => {
+      const revocation = "https://example.com/status/revocation/v1";
+      const suspension = "https://example.com/status/suspension/v1";
+
+      await storage.setEntryOwner(revocation, 0, { delegationId: "delegation-1", retired: false });
+      await storage.setEntryOwner(suspension, 0, { delegationId: "delegation-2", retired: false });
+      await storage.setEntryOwner(suspension, 0, { delegationId: "delegation-2", retired: true });
+
+      expect(await storage.getEntryOwner(revocation, 0)).toEqual({ delegationId: "delegation-1", retired: false });
+      expect(await storage.getEntryOwner(suspension, 0)).toEqual({ delegationId: "delegation-2", retired: true });
+      expect(await storage.getEntryOwner(revocation, 1)).toBeNull();
+      expect(await storage.getEntryOwner("https://example.com/status/other", 0)).toBeNull();
+    });
+
+    it("record a new entry's owner only while the entry has none, with setEntryOwnerIfAbsent", async () => {
+      const revocation = "https://example.com/status/revocation/v1";
+
+      expect(await storage.setEntryOwnerIfAbsent(revocation, 0, { delegationId: "delegation-1", retired: false })).toBe(true);
+      expect(await storage.setEntryOwnerIfAbsent(revocation, 0, { delegationId: "delegation-2", retired: false })).toBe(false);
+      await storage.setEntryOwner(revocation, 0, { delegationId: "delegation-1", retired: true });
+      expect(await storage.setEntryOwnerIfAbsent(revocation, 0, { delegationId: "delegation-1", retired: false })).toBe(false);
+
+      expect(await storage.getEntryOwner(revocation, 0)).toEqual({ delegationId: "delegation-1", retired: true });
+    });
+
+    it("forget every owner on clear", async () => {
+      const revocation = "https://example.com/status/revocation/v1";
+      await storage.setEntryOwner(revocation, 0, { delegationId: "delegation-1", retired: false });
+
+      storage.clear();
+
+      expect(await storage.getEntryOwner(revocation, 0)).toBeNull();
+    });
+
+    for (const [name, make] of [
+      ["MemoryStatusListStorage", () => new MemoryStatusListStorage()],
+      ["a subclass that keeps its lists elsewhere", () => new OwnMapStore()],
+    ] as const) {
+      it(`keep apart from the lists, so no list write changes a record nor a record write an etag (${name})`, async () => {
+        const store: ConditionalStatusListStorageProvider & StatusEntryOwnerStorageProvider = make();
+        const statusListId = "https://example.com/status/revocation/v1";
+        await store.setEntryOwner(statusListId, 0, { delegationId: "delegation-1", retired: false });
+        await store.setStatusList(statusListId, mockStatusListCredential);
+        const read = await store.getStatusListWithEtag(statusListId);
+
+        // A retirement lands between a writer's read of the list and its conditional write.
+        await store.setEntryOwner(statusListId, 0, { delegationId: "delegation-1", retired: true });
+        expect(await store.setStatusListIfMatch(statusListId, mockStatusListCredential, read!.etag)).toBe(true);
+        await store.setStatusList(statusListId, mockStatusListCredential);
+
+        expect(await store.getEntryOwner(statusListId, 0)).toEqual({ delegationId: "delegation-1", retired: true });
+      });
+    }
   });
 
   describe("getAllStatusListIds", () => {

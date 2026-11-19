@@ -11,8 +11,10 @@ import type {
   AtomicDelegationGraphStorageProvider,
   DelegationGraphStorageProvider,
   DelegationNode,
+  StatusEntryIndexedGraphStorageProvider,
 } from '../delegation-graph.js';
 import { registrationConflict } from '../delegation-registration.js';
+import { entryKey, readableStatusEntry } from '../delegation-status-entry.js';
 
 /**
  * Memory-based Delegation Graph storage
@@ -25,7 +27,10 @@ import { registrationConflict } from '../delegation-registration.js';
  * - Examples
  */
 export class MemoryDelegationGraphStorage
-  implements DelegationGraphStorageProvider, AtomicDelegationGraphStorageProvider
+  implements
+    DelegationGraphStorageProvider,
+    AtomicDelegationGraphStorageProvider,
+    StatusEntryIndexedGraphStorageProvider
 {
   private nodes = new Map<string, DelegationNode>();
 
@@ -47,7 +52,8 @@ export class MemoryDelegationGraphStorage
    * Performs parent validation, child insert, and parent link in one
    * serialization point. An id that is already stored is left untouched: a
    * repeat of the same registration is a no-op, and a conflicting one throws
-   * rather than replace the node's revocation state and children.
+   * rather than replace the node's revocation state and children. Whose a
+   * status list entry is, `DelegationGraphManager` decides before it calls this.
    */
   async registerNodeAtomic(node: DelegationNode): Promise<void> {
     if (node.parentId === node.id) {
@@ -76,6 +82,16 @@ export class MemoryDelegationGraphStorage
       this.nodes.set(storedParent.id, storedParent);
     }
     this.nodes.set(storedNode.id, storedNode);
+  }
+
+  /**
+   * The ids of every stored node whose status list entry has key `key`. A
+   * node whose stored entry no list can hold is left out: it sets no bit.
+   * Reads every node, as a store for tests and development may; a durable
+   * store indexes the key instead.
+   */
+  async getNodeIdsByStatusEntry(key: string): Promise<string[]> {
+    return [...this.nodes.values()].filter((node) => readableEntryKey(node) === key).map((node) => node.id);
   }
 
   /**
@@ -208,4 +224,10 @@ export class MemoryDelegationGraphStorage
 
     return chain;
   }
+}
+
+/** The key of `node`'s status list entry, or `undefined` for a node that holds none it can read. */
+function readableEntryKey(node: DelegationNode): string | undefined {
+  const entry = readableStatusEntry(node);
+  return entry === undefined ? undefined : entryKey(entry);
 }

@@ -18,6 +18,15 @@ import { acceptEntrySize, acceptStatusPurpose } from '../utils/statuslist-accept
 import { assertStatusListValidity } from '../utils/statuslist-validity.js';
 import { clockSkewOption } from '../utils/validity-window.js';
 import { RefusalError } from '../utils/refusal.js';
+import { describeValue } from '../utils/describe-value.js';
+import {
+  entryOwnerRecorder,
+  readEntryOwner,
+  retireEntryOwner,
+  type StatusEntryAllocationOptions,
+  type StatusEntryOwner,
+  type StatusEntryOwners,
+} from './status-entry-owner.js';
 import { KeyedLock } from '../utils/keyed-lock.js';
 import type { StatusListStorageProvider } from './statuslist-storage.js';
 import {
@@ -52,7 +61,7 @@ export interface StatusList2021ManagerOptions extends StatusListWriteRetryOption
   maxClockSkewMs?: number;
 }
 
-export class StatusList2021Manager {
+export class StatusList2021Manager implements StatusEntryOwners {
   private statusListBaseUrl: string;
   private defaultListSize: number;
   /** The clock tolerance each bound of a list's validity window is held with, in milliseconds. */
@@ -115,16 +124,36 @@ export class StatusList2021Manager {
   }
 
   /**
-   * Allocate the next entry of the `purpose` list, creating the list on first
-   * use.
+   * Allocate the next entry of the `purpose` list for one delegation, creating the list on first
+   * use. Give each delegation an entry of its own, and register the delegation with it. Pass
+   * `options.delegationId`, the id the delegation is registered under, to record the entry as that
+   * delegation's: a delegation graph built with this manager as `statusEntryOwners` then registers
+   * it for no other, and `CascadingRevocationManager` sets and clears it for no other. It needs a
+   * storage provider that implements `StatusEntryOwnerStorageProvider`, and throws a `TypeError`
+   * before taking an index for one that does not.
+   *
+   * The owner is recorded last, once the list holds the entry's index: an allocation that throws
+   * records none, and its index is registered for no delegation by a graph that reads owners.
+   * Allocate again.
    *
    * @throws {Error} when the index the store allocated is outside the list.
    * @throws {StatusListWriteConflictError} when the list had to be created and
    *   a conditional store refused every write of it; nothing was stored.
    */
-  async allocateStatusEntry(purpose: 'revocation' | 'suspension'): Promise<CredentialStatus> {
+  async allocateStatusEntry(
+    purpose: 'revocation' | 'suspension',
+    options?: StatusEntryAllocationOptions
+  ): Promise<CredentialStatus> {
+    const recordOwner = entryOwnerRecorder(this.storage, options);
     const statusListId = `${this.statusListBaseUrl}/${purpose}/v1`;
 
+    // The order: take the index, write the list (a conditional write, tried again over the list now
+    // stored when another writer got in first), check the list holds the index, and only then
+    // record the owner, under that same index. An index with no owner recorded is registered for
+    // no delegation by a graph that reads owners, and `allocateIndex` never gives it out again, so
+    // an allocation that stops before the record, as for a `StatusListWriteConflictError`, a store
+    // that cannot be reached, or a crash, leaves an index nobody can take. Recording first would
+    // leave an owner for an index the allocation then gave up.
     const index = await this.storage.allocateIndex(statusListId);
 
     const capacity = await this.ensureStatusListExists(statusListId, purpose);
@@ -135,6 +164,8 @@ export class StatusList2021Manager {
         `Status list ${statusListId} is full: index ${index} is outside its ${capacity} entries`
       );
     }
+
+    await recordOwner(statusListId, index);
 
     const credentialStatus: CredentialStatus = {
       id: `${statusListId}#${index}`,
@@ -148,8 +179,28 @@ export class StatusList2021Manager {
   }
 
   /**
+   * The owner `allocateStatusEntry` recorded for `credentialStatus`, by its list's id exactly as
+   * written, or `undefined` when it recorded none.
+   */
+  getStatusEntryOwner(credentialStatus: CredentialStatus): Promise<StatusEntryOwner | undefined> {
+    return readEntryOwner(this.storage, credentialStatus);
+  }
+
+  /**
+   * Retire `credentialStatus`, keeping its owner, so a delegation graph built with this manager as
+   * `statusEntryOwners` registers no delegation with it again. The graph calls this when it removes
+   * the delegation the entry was allocated to.
+   */
+  retireStatusEntry(credentialStatus: CredentialStatus): Promise<void> {
+    return retireEntryOwner(this.storage, credentialStatus);
+  }
+
+  /**
    * Set the bit of `credentialStatus` when `revoked` is true, or clear it, then
-   * sign the list again and store it.
+   * sign the list again and store it. An entry whose `statusListCredential` is
+   * not the id the stored list was created with, which a storage provider that
+   * reads two spellings of a URL as one list would hand back, throws a
+   * `RefusalError` of code `delegation_malformed`, and changes nothing.
    *
    * @throws {StatusListWriteConflictError} when a conditional store refused
    *   every write of the list, because another writer stored it first each
@@ -182,6 +233,13 @@ export class StatusList2021Manager {
 
     if (!statusList) {
       throw new Error(`Status list not found: ${statusListCredential}`);
+    }
+    if (statusList.id !== statusListCredential) {
+      throw new RefusalError(
+        'delegation_malformed',
+        `Status list ${describeValue(statusListCredential)} reads as the list ${describeValue(statusList.id)}, so no ` +
+          'entry of it is set or cleared: an entry names its list by the id the list was created with'
+      );
     }
 
     const manager = await BitstringManager.decode(

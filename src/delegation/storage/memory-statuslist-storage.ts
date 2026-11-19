@@ -8,6 +8,7 @@
 import type { StatusList2021Credential } from '../../types/protocol.js';
 import { base64urlEncodeFromBytes } from '../../utils/base64.js';
 import { KeyedLock } from '../../utils/keyed-lock.js';
+import type { StatusEntryOwner, StatusEntryOwnerStorageProvider } from '../status-entry-owner.js';
 import type {
   ConditionalStatusListStorageProvider,
   HistoricalStatusListStorageProvider,
@@ -16,6 +17,14 @@ import type {
 
 function clone(credential: StatusList2021Credential): StatusList2021Credential {
   return structuredClone(credential);
+}
+
+function entryOwnerKey(statusListId: string, index: number): string {
+  return `${statusListId}#${index}`;
+}
+
+function copyOwner(owner: StatusEntryOwner): StatusEntryOwner {
+  return { delegationId: owner.delegationId, retired: owner.retired };
 }
 
 /**
@@ -30,7 +39,7 @@ async function contentEtag(credential: StatusList2021Credential): Promise<string
 }
 
 /**
- * Status lists in memory, with the conditional write.
+ * Status lists in memory, with the conditional write and the record of whose each entry is.
  *
  * A subclass may override `getStatusList` and `setStatusList`, to count, log,
  * delay or copy what is stored: the conditional write reads and stores through
@@ -49,11 +58,13 @@ async function contentEtag(credential: StatusList2021Credential): Promise<string
  * to end, and the outer one for it: neither would ever settle.
  */
 export class MemoryStatusListStorage
-  implements HistoricalStatusListStorageProvider, ConditionalStatusListStorageProvider
+  implements HistoricalStatusListStorageProvider, ConditionalStatusListStorageProvider, StatusEntryOwnerStorageProvider
 {
   private statusLists = new Map<string, StatusList2021Credential>();
   private versions = new Map<string, StatusList2021Credential[]>();
   private indexCounters = new Map<string, number>();
+  /** The owner of each entry, by `<statusListId>#<index>`. */
+  private entryOwners = new Map<string, StatusEntryOwner>();
   /** For each list a write to this class stored, the etag that names that write. */
   private readonly etagsOfStoredLists = new Map<string, string>();
   /** Runs the conditional writes of each list one at a time. */
@@ -114,6 +125,23 @@ export class MemoryStatusListStorage
     return allocated;
   }
 
+  /** Record `owner` for an entry with no record yet, in one step, since nothing is awaited between the check and the write. */
+  async setEntryOwnerIfAbsent(statusListId: string, index: number, owner: StatusEntryOwner): Promise<boolean> {
+    const key = entryOwnerKey(statusListId, index);
+    if (this.entryOwners.has(key)) return false;
+    this.entryOwners.set(key, copyOwner(owner));
+    return true;
+  }
+
+  async setEntryOwner(statusListId: string, index: number, owner: StatusEntryOwner): Promise<void> {
+    this.entryOwners.set(entryOwnerKey(statusListId, index), copyOwner(owner));
+  }
+
+  async getEntryOwner(statusListId: string, index: number): Promise<StatusEntryOwner | null> {
+    const owner = this.entryOwners.get(entryOwnerKey(statusListId, index));
+    return owner === undefined ? null : copyOwner(owner);
+  }
+
   getIndexCount(statusListId: string): number {
     return this.indexCounters.get(statusListId) || 0;
   }
@@ -135,6 +163,7 @@ export class MemoryStatusListStorage
     this.statusLists.clear();
     this.versions.clear();
     this.indexCounters.clear();
+    this.entryOwners.clear();
     this.etagsOfStoredLists.clear();
   }
 

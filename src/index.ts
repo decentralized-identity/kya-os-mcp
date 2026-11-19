@@ -132,8 +132,12 @@ export { acceptStatusListValidity } from './utils/statuslist-validity.js';
 export {
   DelegationGraphManager,
   createDelegationGraph,
+  statusEntryKey,
   type DelegationNode,
+  type DelegationGraphOptions,
   type DelegationGraphStorageProvider,
+  type StatusEntryClaim,
+  type StatusEntryIndexedGraphStorageProvider,
 } from './delegation/delegation-graph.js';
 
 export {
@@ -148,10 +152,19 @@ export {
   type StatusListWriteRetryOptions,
   type StoredStatusList,
 } from './delegation/statuslist-manager.js';
+export type {
+  StatusEntryAllocationOptions,
+  StatusEntryOwner,
+  StatusEntryOwners,
+  StatusEntryOwnerStorageProvider,
+} from './delegation/status-entry-owner.js';
 
 export {
   CascadingRevocationManager,
+  StatusEntryUnchangedError,
   createCascadingRevocationManager,
+  type StatusEntryUnchangedReason,
+  type UnchangedStatusEntry,
   type RevocationEvent,
   type RevocationHook,
   type CascadingRevocationOptions,

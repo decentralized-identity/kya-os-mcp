@@ -28,7 +28,10 @@ export const REFUSAL_CODES = Object.freeze({
    * a credential may. Also a status entry no
    * checker of the verifier reads: one that states another `statusPurpose` than the checker's, a
    * `statusSize` other than 1, an index that is not a non-negative decimal string, or an index past
-   * the end of its status list.
+   * the end of its status list. To `DelegationGraphManager`, also a status entry a delegation may
+   * not be registered with: one not allocated to it, or one another delegation is registered with;
+   * and to `StatusList2021Manager.updateStatus`, an entry that names its list by an id other than
+   * the one the stored list was created with.
    */
   delegation_malformed: 'delegation_malformed',
   /**

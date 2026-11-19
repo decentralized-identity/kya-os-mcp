@@ -567,6 +567,7 @@ interface DelegationRecord {
   controller?: string;           // DID that can revoke this delegation
   vcId: string;                  // URN of the Verifiable Credential
   parentId?: string;             // Parent delegation ID (for chains)
+  parentCredentialDigest?: string; // §7.8 digest of the parent credential (optional, §6.2)
   constraints: DelegationConstraints;
   signature: string;             // Extracted from VC proof
   status: 'active' | 'revoked' | 'expired';
@@ -678,6 +679,18 @@ A line break there would end a log line and start one the party wrote, and a for
 A verifier MUST reject a credential whose `issuanceDate` is ahead of its clock, or cannot be read as such a date, since it names no start, as `delegation_not_yet_valid`.
 It MAY hold the start with the clock tolerance §6.6 permits for a status list, of no more than 600 seconds, since an issuer stamps it with the moment it signs; the reference implementation holds it with 120 seconds.
 
+**The parent commitment.** A re-delegation names its parent by `parentId` (§6.4), and an id is a name the parent's issuer chose.
+A parent issued again under the id of another would therefore carry every re-delegation signed under the first.
+A re-delegation MAY state, in its `delegation` object beside `parentId`, `parentCredentialDigest`: the digest §7.8 gives its parent credential, `SHA-256(UTF8("org.kya-os.delegation.credential.v1") || 0x00 || JCS(signed form))`, written as `sha256:` and 64 lowercase hex digits.
+It is the commitment §6.10 defines for a hop of that profile, stated in this profile's credential.
+The digest is of the parent in the form the chain carries it, a credential object with its `proof` or a VC-JWT; the two forms of one delegation have different signed forms (§7.8), so an issuer states the digest of the form its verifiers resolve.
+A verifier MUST check the digest of every credential that states one against its parent, as the chain resolves it, and MUST refuse the chain, as `chain_invalid`, when the two differ, when that parent has no signed form, or when a credential with no `parentId` states one, since it has no parent credential.
+A credential states the member when its `delegation` object holds it, whatever its value, so one that states it as `null` states a digest that is not its parent's.
+A re-delegation that states none, leaving the member out, is accepted as before, its parent named by its `parentId` alone; version 2.0.0 requires it of every re-delegation.
+An issuer that holds the parent credential when it signs a re-delegation SHOULD state it, and the reference implementation's `createAndIssueDelegation` writes it when given the parent as `options.parent`.
+The digest of a credential covers what the credential states, so a chain each of whose re-delegations states the member is fixed by the digest of its last credential alone, which is what a holder's request proof names (§7.8).
+The `delegation-chain/parent-digest-*` conformance vectors carry the member.
+
 A `DelegationCredential` carries a _permission_, not a _claim_. To keep claim
 semantics out of an authorization decision — a confused-deputy vector (§11.6) —
 the `credentialSubject` MUST contain only two properties: `id` (the delegate's
@@ -788,6 +801,7 @@ Delegations form a directed acyclic graph (DAG):
 - A member of `constraints`, or of `constraints.crisp`, that §6.3 does not define MUST be stated with an equal value (RFC 8785) by every re-delegation below the delegation that states it, as §6.10 requires of a caveat, and a verifier MUST reject a re-delegation that drops or changes one.
   Whatever enforces such a member, or a budget, reads it from the presented credential alone, so a re-delegation that dropped or raised it would widen its parent.
 - A delegation that states no scopes of either kind (§6.3) grants none, so a verifier MUST reject a re-delegation under it that states any
+- A re-delegation that states `parentCredentialDigest` (§6.2) MUST state the digest of its parent credential, and a delegation with no `parentId` MUST NOT state one; a verifier MUST reject a chain in which either rule is broken
 - The root delegation's `issuerDid` MUST equal the `issuer` of its `DelegationCredential`, the DID whose key signs it (§6.2), and a verifier MUST reject a chain whose root names any other DID, so the Responsible Party is always a DID that signed
 - Every chain MUST terminate at a Responsible Party. The Responsible Party's DID is the `issuerDid` of the root `DelegationCredential` and is the entity ultimately accountable for actions taken under any descendant delegation. In personal use the Responsible Party equals the Principal; in organizational use the Responsible Party is the parent organization while the Principal is the immediate human delegator (see §2).
 
@@ -964,7 +978,7 @@ A root that keeps other lists for its delegates, the shards of one herd list for
 A deployment whose root credential carries no status entry does the same, since rule 3 then gives the root no URL.
 A verifier that pins no root reads the root's list only for the root's own credential, whose `issuer` the root is, and at the URLs its configuration binds to the root.
 The issuers between the root and the credential keep no URL but those of their own credentials' entries.
-A credential that states no `parentCredentialDigest` (§6.10) commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
+A credential that states no `parentCredentialDigest` (§6.2, §6.10) commits to its parent only by an `id` the parent's issuer chose, so whoever presents a chain decides who stands between the root and the credential, while the root is held to the verifier's own configuration.
 One that states it commits to the one parent credential it was signed under, and a chain each of whose hops but the root states it is fixed from the root to the credential.
 An issuer between them still revokes what it delegated, as §6.5.1 allows, by revoking its own credential on its own list, which the cascading chain walk (§6.10) carries to every credential below it.
 The credential's own `issuer` is the one the credential names, so that issuer is trusted only once the credential's proof verifies.
@@ -1368,6 +1382,10 @@ BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)
 }
 ```
 
+The header is part of the JWS signing input, so the signature covers every parameter of it.
+A holder's request proof carries one more parameter, `org.kya-os/delegation`, which states the delegation its call presents (§7.8).
+A verifier ignores a header parameter it does not know (RFC 7515 §4), so a proof that carries one verifies wherever a proof without it does, and the proof's `meta` holds no copy of it.
+
 **Payload** (canonicalized):
 ```json
 {
@@ -1432,6 +1450,7 @@ A verifier MUST read a proof's JWS as follows, and MUST refuse a proof whose JWS
    This reading is for a proof and its key alone: §7.8 reads the third segment of a VC-JWT more loosely, as the JWS libraries that verify a credential read it.
 2. The header is a JSON text in UTF-8, an object whose `alg` is `EdDSA` and whose `kid` is the `kid` of the proof's `meta`.
    A payload segment, where the JWS carries one, is a JSON text in UTF-8 too.
+   Any other parameter of the header is acted on only once step 4 has verified the signature over that header, and of parameters that share a name the last is read, or the JWS is refused (RFC 7515 §4).
 3. The key is the Ed25519 key that `kid` names.
    Given as a JWK, it has `kty` `OKP`, `crv` `Ed25519` and the same `kid`, and its `x` is read as step 1 reads a segment, and is 32 bytes.
 4. The signature is verified over the header segment and the payload rebuilt from `meta` as above, written as base64url without padding.
@@ -1741,17 +1760,45 @@ A verifier that holds a chain, and is to take a proof as evidence that the serve
 A verifier that holds only part of the chain, such as a caller that knows its own credential and not the ancestors the server resolved, cannot recompute the digest and leaves the comparison to a party that can.
 
 **A holder's request proof.**
-A holder-of-key request proof (§7) names the delegation it is made under with the same two members, derived by the holder from the chain it presents, root first, its own credential last.
-A verifier that checks the proof against the delegation a call presents MUST refuse a proof that names another: one whose `delegationRef` is not the reference of the presented credential, or is stated where that credential shows no id, or whose `delegationChainDigest` is not the digest of the chain the verifier evaluated for the call.
-Without this rule a party on the path that holds another delegation of the same subject could present it beside the holder's proof, and the call would be decided under a grant the holder did not choose.
-A holder SHOULD name the delegation in every request proof about a call that presents one.
-A proof that names none is bound to its subject alone, and a verifier of this release accepts it.
+A holder-of-key request proof (§11.8) covers the call: the tool and its business arguments (§7.3).
+The delegation rides beside it, outside the request hash, so the proof alone is good beside any delegation of its subject.
+A party on the path that holds another delegation of the same subject, and no key, could put it in place of the one the holder chose, or take the delegation away so that authority the server retains for another one answers, and the call would be decided under a grant the holder did not choose.
+Nothing is replayed, so a nonce does not prevent it.
+The holder therefore states which delegation its call presents, where its signature covers the statement and every verifier of an earlier version still verifies the proof: in the protected header of the proof's JWS (§7.4), as the parameter `org.kya-os/delegation`.
+
+- **The statement** is the credential digest (step 2 above) of the credential the call presents, in the form it is sent, a credential object or a VC-JWT, written as `sha256:` and 64 lowercase hex digits; or the string `none`, for a call that presents no delegation.
+  It names the presented credential alone, the last of its chain, so a holder needs no ancestor to make it.
+- **A holder** MUST state it in every request proof it makes: the digest of the credential the call presents, or `none`.
+  A holder that makes its proof before it attaches the delegation states the delegation it will attach, never `none`.
+  A value with no signed form has no digest and is no credential, so a proof for a call that sends one states nothing, and the call's verifier refuses the value whatever the proof says.
+- **A verifier** that checks a request proof for a delegated call MUST read the statement only from the protected header of the JWS whose signature it has verified (§7.4), and never from an unprotected header, the proof's `meta`, or the arguments of the call.
+  It MUST refuse a proof whose statement is neither a credential digest nor `none`.
+  When the call presents a credential, it MUST digest that credential in the form received, and MUST refuse a proof that states the digest of another.
+  When the call presents none, and the verifier would authorize it under authority it retains from an earlier presentation, it MUST authorize a proof that states a credential digest only under authority retained for that credential.
+  It MUST refuse a request proof whose signed `delegationRef` is not the reference of the presented credential, or is stated where that credential shows no id, or whose signed `delegationChainDigest` is not the digest of the chain the verifier evaluated for the call; a holder has no need to sign either member.
+- **A proof that names no credential** is one that states nothing, as a proof made before this parameter existed does, or one that states `none` beside a presented credential.
+  It is bound to its subject alone, so the substitution above still succeeds against it.
+  A verifier SHOULD refuse it, and SHOULD refuse a proof that states nothing for a call that presents no delegation.
+  During the transition a verifier MAY accept such a proof, so that holders of an earlier version keep working; one that does MUST NOT report the call as bound to its delegation by the holder, and SHOULD record that the proof named none.
+  Version 2.0.0 of this specification makes each of these refusals a MUST.
+
+The statement fixes the ancestors too, wherever each re-delegation states `parentCredentialDigest` (§6.2, §6.10): the digest of the presented credential covers the digest it states of its parent, and so on to the root.
+Where a credential states none, its parent is named by an id alone, and neither the statement nor anything else the holder signs fixes it.
+A verifier that reports whether a call's delegation is fixed by the holder reports both: whether the proof named the presented credential, and whether every re-delegation of the chain it evaluated states its parent's digest.
+
+The proof of the Entity Card profile (`org.kya-os/proof.v1`, SPEC-ENTITY-CARD.md §8) carries the same parameter in the protected header of its detached JWS, where the credential presented is the last of the chain the request carries, and is held by the same rules.
+
+The reference implementation's `generateRequestProof` makes the statement from the arguments it is given, `_kyaos_delegation` among them, with no further input, and its `verifyDelegatedCallProof` holds a proof to the credential a call presented, which it takes as a required input.
+Its server accepts a proof that names no credential by default, with a warning, through 1.x (`delegation.requestBinding: 'prefer'`), refuses one under `'require'`, and refuses one by default from 2.0.0.
+Appendix C.5 gives a vector, and the `signed-proof/request-binding-*` conformance vectors hold a verifier to each rule.
 
 **Compatibility.**
 `delegationChainDigest` is a new signed claim.
 A verifier that predates it rebuilds the payload of §7.4 without it and rejects the proof, so a producer SHOULD make the claim an explicit opt-in until the verifiers of its proofs know it.
 Signing either member from the server is not part of this release of the reference implementation: its server sets neither `delegationRef` nor `delegationChainDigest`, and its verifier checks both against a chain it is given.
 `delegationRef` has been a payload member since the first version of this chapter and needs no opt-in.
+The statement of a holder's request proof is a protected header parameter, and not a payload claim, for this reason: a verifier that predates it ignores the parameter (RFC 7515 §4) and verifies the proof as it did before, and one that knows it holds the proof to it.
+Releases 1.11.0 to 1.25.0 of the reference implementation accept a request proof that carries the parameter, and refuse one whose header was changed after signing (UPGRADING.md).
 
 ---
 
@@ -2037,6 +2084,7 @@ and the residual risk an operator carries.
 | **Downgrade** — a client strips KYA-OS headers entirely. | Fail-closed: servers requiring identity MUST reject sessionless calls; `/.well-known/mcp` advertises requirements. See §11.7. | A non-compliant client that the operator has not configured to require identity. |
 | **Consent-URL substitution** — a malicious in-path intermediary swaps the `authorizationUrl` in a `needs_authorization` challenge to phish the user toward an attacker-controlled consent page. | The challenge is signed (`outcome: 'needs_authorization'`); its `responseHash` binds the challenge content incl. the URL (§7.4, §9.2). A client recomputes `responseHash` over the received challenge and verifies the proof against the resource DID, detecting the swap. | A client that does not verify the challenge proof / recompute the hash — the check is the verifier's responsibility (a §11.7-style downgrade). TLS protects the URL in transit; this adds defense against a malicious in-path component. |
 | **Delegation substitution** - after the fact, a party presents a different chain as the one a signed call was decided under: a credential re-issued under the same id, or another set of ancestors. | `delegationChainDigest` in the response proof, covered by the signature, over every credential the server evaluated; on a refusal as well as on an allowed call (§7.8). | A proof without the digest names the delegation by `delegationRef` alone, a name, so a verifier that needs the binding must require the digest. |
+| **Delegation swapped in flight** - a party on the path that holds no key forwards a holder's genuine request proof beside another delegation of the same agent, or with the delegation removed or added, so the call is decided under a grant the holder did not choose. | The request proof states the §7.8 digest of the credential its call presents, or `none`, in the JWS protected header its signature covers, and a verifier holds the proof to the credential presented (§7.8); `parentCredentialDigest` fixes each ancestor (§6.2, §6.10). | A proof that names no credential, which a verifier MAY still accept during the transition (§7.8); a re-delegation that states no parent digest; a subject whose key the verifier cannot bind (§11.8). |
 | **Refusal shown as acceptance** - a party presents a chain of its own making, is refused, and shows the signed refusal, whose digest is that chain's, as evidence that the server accepted it. | The proof's `outcome` is covered by the signature, and a verifier that checks a chain rejects any outcome but the one it expects, an allowed call unless it says otherwise (§7.8). | A verifier that compares the digest and not the outcome. |
 | **Denial of service** | Per-session and per-handshake rate limiting; session caps; external session storage with TTL eviction. See §11.9. | Standard transport-layer DoS exposure (DDoS) is out of scope — operators rely on conventional network defenses. |
 
@@ -2577,6 +2625,114 @@ sha256:d29d65862fce70137390bea2859696c7ad80ce88cede778fea1cab24d513eed1
 **`delegationChainDigest`** (SHA-256 over `org.kya-os.delegation.chain.v1`, a zero byte, and the line above):
 ```
 sha256:2df99ab7f9b80436dba945e0dfb7a37bd7b35400c82bbc72a5c2744f516eb788
+```
+
+### C.5 Request Proof Naming Its Delegation
+
+A holder's request proof that states the delegation its call presents (§7.8), signed, so that an implementation can reproduce it to the last byte: Ed25519 signs deterministically.
+The holder's key is the first test key of RFC 8032 §7.1, and its DID is the did:key §4.3 derives for it.
+The credential is shortened as in C.4, and its own signature is not meant to verify.
+
+**Holder private key (32 bytes, hex):**
+```
+9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60
+```
+
+**Holder public key (32 bytes, hex):**
+```
+d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
+```
+
+**Verification method (`kid`):**
+```
+did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw
+```
+
+**Credential presented (object):**
+```json
+{
+  "id": "urn:uuid:2222-bbbb",
+  "type": ["VerifiableCredential", "DelegationCredential"],
+  "issuer": "did:web:user.example.com",
+  "credentialSubject": { "id": "did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw" },
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2024-03-01T12:00:00Z",
+    "verificationMethod": "did:web:user.example.com#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw"
+  }
+}
+```
+
+**Signed form, canonical (RFC 8785):**
+```
+{"credential":{"credentialSubject":{"id":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw"},"id":"urn:uuid:2222-bbbb","issuer":"did:web:user.example.com","type":["VerifiableCredential","DelegationCredential"]},"signature":"c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw"}
+```
+
+**Credential digest**, which the proof states:
+```
+sha256:52bf13b89717bcec22e230f770471f09746b081b7f73da43094cd9aad511dc1a
+```
+
+**Protected header**, as signed:
+```
+{"alg":"EdDSA","kid":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","org.kya-os/delegation":"sha256:52bf13b89717bcec22e230f770471f09746b081b7f73da43094cd9aad511dc1a"}
+```
+
+**Payload, canonical**, for the call of C.1 whose business arguments are `{"msg":"hi"}`:
+```
+{"aud":"did:web:server.example.com","iss":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","nonce":"bm9uY2UtYzUtMDAwMDAwMQ","requestHash":"sha256:c8f3d59959c9247211de8c76b94ef17f0c279f09362350ced67f69ecdb89d6c7","sessionId":"kyaos_c5-session","sub":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","ts":1710288000}
+```
+
+**Compact JWS** (`BASE64URL(header) . BASE64URL(payload) . BASE64URL(signature)`):
+```
+eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3I3o2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1Njo1MmJmMTNiODk3MTdiY2VjMjJlMjMwZjc3MDQ3MWYwOTc0NmIwODFiN2Y3M2RhNDMwOTRjZDlhYWQ1MTFkYzFhIn0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3Iiwibm9uY2UiOiJibTl1WTJVdFl6VXRNREF3TURBd01RIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInNlc3Npb25JZCI6Imt5YW9zX2M1LXNlc3Npb24iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsInRzIjoxNzEwMjg4MDAwfQ.wn1TFvrzCXbbYlB4f8q3g3JTJvVZOO7CzyutpqvVILWfAo1Xg-VXJZ1H0lbVgfi_ImIPdytpT561MBCOUqwtBw
+```
+
+A verifier that is presented the credential above beside this proof binds it.
+One that is presented any other credential, the same one with another `proofValue` included, refuses it, since that credential has another digest.
+
+**The same delegation sent as a compact VC-JWT** has another signed form, so another digest, and a proof names the form its call sends.
+The VC-JWT is shortened as the object is: its header is `{"alg":"EdDSA","typ":"JWT"}`, and its payload states the `iss`, `sub` and `jti` of the credential above.
+
+**Credential presented (compact VC-JWT):**
+```
+eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnVzZXIuZXhhbXBsZS5jb20iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsImp0aSI6InVybjp1dWlkOjIyMjItYmJiYiIsInZjIjp7InR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdfX0.c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw
+```
+
+**Signed form, canonical (RFC 8785):**
+```
+{"jwt":"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJkaWQ6d2ViOnVzZXIuZXhhbXBsZS5jb20iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsImp0aSI6InVybjp1dWlkOjIyMjItYmJiYiIsInZjIjp7InR5cGUiOlsiVmVyaWZpYWJsZUNyZWRlbnRpYWwiLCJEZWxlZ2F0aW9uQ3JlZGVudGlhbCJdfX0","signature":"c2lnbmF0dXJlLW9mLWNyZWRlbnRpYWw"}
+```
+
+**Credential digest**, which the proof states:
+```
+sha256:118311d6a525a36fe5e3d7fc5dc67b7e4fdd032d8b9b71799b476a82cbacb1ca
+```
+
+**Protected header**, as signed:
+```
+{"alg":"EdDSA","kid":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","org.kya-os/delegation":"sha256:118311d6a525a36fe5e3d7fc5dc67b7e4fdd032d8b9b71799b476a82cbacb1ca"}
+```
+
+**Compact JWS**, over the same payload:
+```
+eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3I3o2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6InNoYTI1NjoxMTgzMTFkNmE1MjVhMzZmZTVlM2Q3ZmM1ZGM2N2I3ZTRmZGQwMzJkOGI5YjcxNzk5YjQ3NmE4MmNiYWNiMWNhIn0.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3Iiwibm9uY2UiOiJibTl1WTJVdFl6VXRNREF3TURBd01RIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInNlc3Npb25JZCI6Imt5YW9zX2M1LXNlc3Npb24iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsInRzIjoxNzEwMjg4MDAwfQ.tki3aTL2MZwFUmKHZHQ28GRmI1kEahphrsJr-1v245z4M_n-qVp_Wabn-gdaIFjy1YYHCFalRarTOMzs9DT1Dg
+```
+
+A verifier that is presented the VC-JWT beside this proof binds it, and refuses it beside the credential object, as it refuses the proof above beside the VC-JWT.
+
+**For a call that presents no delegation**, the same holder states `none`.
+
+**Protected header**, as signed:
+```
+{"alg":"EdDSA","kid":"did:key:z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw#z6MktwupdmLXVVqTzCw4i46r4uGyosGXRnR3XjN4Zq7oMMsw","org.kya-os/delegation":"none"}
+```
+
+**Compact JWS**, over the same payload:
+```
+eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3I3o2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsIm9yZy5reWEtb3MvZGVsZWdhdGlvbiI6Im5vbmUifQ.eyJhdWQiOiJkaWQ6d2ViOnNlcnZlci5leGFtcGxlLmNvbSIsImlzcyI6ImRpZDprZXk6ejZNa3R3dXBkbUxYVlZxVHpDdzRpNDZyNHVHeW9zR1hSblIzWGpONFpxN29NTXN3Iiwibm9uY2UiOiJibTl1WTJVdFl6VXRNREF3TURBd01RIiwicmVxdWVzdEhhc2giOiJzaGEyNTY6YzhmM2Q1OTk1OWM5MjQ3MjExZGU4Yzc2Yjk0ZWYxN2YwYzI3OWYwOTM2MjM1MGNlZDY3ZjY5ZWNkYjg5ZDZjNyIsInNlc3Npb25JZCI6Imt5YW9zX2M1LXNlc3Npb24iLCJzdWIiOiJkaWQ6a2V5Ono2TWt0d3VwZG1MWFZWcVR6Q3c0aTQ2cjR1R3lvc0dYUm5SM1hqTjRacTdvTU1zdyIsInRzIjoxNzEwMjg4MDAwfQ.o0ar1iBiL7mHkjvhOEvKqgtBqxG5t6O_byDoAqUv3ZXB9pwvlCHqG9fhFS1ugg2vznN1D-FFgpI_LCly9FAJBA
 ```
 
 ---

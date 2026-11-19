@@ -22,6 +22,12 @@ export default tseslint.config(
         allowHigherOrderFunctions: true,
       }],
       'preserve-caught-error': 'off',
+      // zod's named `z` export holds the whole of zod, every locale among it, so a bundler keeps all
+      // of it for any consumer that reaches the import (src/__tests__/bundled-zod.test.ts).
+      'no-restricted-syntax': ['error', {
+        selector: "ImportDeclaration[source.value='zod'] > ImportSpecifier[imported.name='z']",
+        message: "Import zod as a namespace, `import * as z from 'zod'`: the named `z` export carries every zod locale into a consumer's bundle.",
+      }],
     },
   },
   {

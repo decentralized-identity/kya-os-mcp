@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { z } from 'zod';
+import * as z from 'zod';
 import { withKyaOs } from '../with-kya-os-server.js';
 import { toMcpToolCallback } from '../mcp-tool-callback.js';
 import type { KyaOsMiddleware, KyaOsOutcomeProofRequest, KyaOsToolResult } from '../with-kya-os.js';

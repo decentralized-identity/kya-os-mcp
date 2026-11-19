@@ -12,7 +12,7 @@
  * uses only `jose` + `json-canonicalize`, already direct dependencies.
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 import type { StatedDelegation } from '../../delegation/stated-delegation.js';
 import { Did, LEGACY_PROOF_PROFILE_ID, PROOF_PROFILE_ID, type ProofPublicJwk } from '../schema.js';
 

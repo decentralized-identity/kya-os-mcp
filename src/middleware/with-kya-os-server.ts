@@ -27,7 +27,7 @@ import {
 } from "./with-kya-os.js";
 import { createKyaOsTransport, type Transport } from "./kya-os-transport.js";
 import { logger } from "../logging/index.js";
-import { z } from "zod";
+import * as z from "zod";
 
 export interface WithKyaOsOptions {
   /** Platform-specific crypto implementation (required) */

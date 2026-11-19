@@ -22,7 +22,7 @@
  * under, for the host to enforce (`./caveats.ts`).
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 import { issuerOf } from '../utils/guards.js';
 import { Did, statusEntrySizeShape, type BitstringStatusListEntry } from './schema.js';
 import type { BitstringRevocationChecker, RevocationChainEntry } from './revocation.js';

@@ -11,31 +11,11 @@
  * marks the entry barrels as having side effects; this test holds that in place
  * for every entry, built as published (`dist/`).
  */
-import { mkdtempSync, rmSync, symlinkSync, mkdirSync, existsSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterAll, describe, expect, it } from 'vitest';
-
-const PACKAGE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const PACKAGE = JSON.parse(readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8')) as {
-  name: string;
-  exports: Record<string, string | { default: string }>;
-};
-const BUILT = existsSync(join(PACKAGE_ROOT, 'dist/index.js'));
-
-if (!BUILT && process.env.CI) {
-  throw new Error('bundled-entries: dist/ is missing; CI must run `pnpm build` before `pnpm test`');
-}
-
-/** Every code entry in `exports` (wildcards and JSON excluded): its specifier and built file. */
-const ENTRIES = Object.entries(PACKAGE.exports)
-  .filter(([key]) => !key.includes('*') && !key.endsWith('.json'))
-  .map(([key, target]) => ({
-    specifier: key === '.' ? PACKAGE.name : `${PACKAGE.name}/${key.slice(2)}`,
-    file: resolve(PACKAGE_ROOT, typeof target === 'string' ? target : target.default),
-  }));
+import { BUILT, consumerDir, ENTRIES, PACKAGE } from './bundling.js';
 
 type Snapshot = Record<string, { type: string; value?: unknown }>;
 
@@ -58,13 +38,10 @@ function valueExports(module: Record<string, unknown>): string[] {
 }
 
 describe.skipIf(!BUILT)('public entries keep their values when bundled with esbuild', () => {
-  const workDir = mkdtempSync(join(tmpdir(), 'kya-os-bundle-'));
   // A consumer resolves the package through node_modules, so esbuild reads the
-  // real package.json (exports map and sideEffects). A junction needs no
-  // privileges on Windows and is a plain symlink elsewhere.
-  mkdirSync(join(workDir, 'node_modules', '@kya-os'), { recursive: true });
-  symlinkSync(PACKAGE_ROOT, join(workDir, 'node_modules', PACKAGE.name), 'junction');
-  afterAll(() => rmSync(workDir, { recursive: true, force: true }));
+  // real package.json (exports map and sideEffects).
+  const { dir: workDir, remove } = consumerDir('kya-os-bundle-');
+  afterAll(remove);
 
   it('covers every code entry in the exports map', () => {
     const specifiers = ENTRIES.map(({ specifier }) => specifier);

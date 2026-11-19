@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import Ajv2020, { type AnySchema } from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import * as z from 'zod';
 import { DID_MAX_LENGTH, didPattern, whyNotDid } from '../../utils/did-syntax.js';
 import type { SafeFetch } from '../../utils/safe-fetch.js';
 import { parseCredentials } from '../carried-chain.js';

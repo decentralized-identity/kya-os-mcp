@@ -9,7 +9,7 @@
  * (SEP-2133 graduation) is a constant change, never a call-site sweep.
  */
 
-import { z } from 'zod';
+import * as z from 'zod';
 import { PROOF_PROFILE_ID } from '../card/schema.js';
 
 /** The proposed reverse-DNS MCP extension id (SPEC-MCP-EXTENSION.md §1.1). */

@@ -11,7 +11,7 @@ import { AuditArtifactVerifier } from './verifier.js';
 import type { SignerRef } from './types.js';
 import { NodeCryptoProvider } from '../providers/node-crypto.js';
 import { sanitizeForMessage } from '../utils/message-text.js';
-import { z } from 'zod';
+import * as z from 'zod';
 
 interface AuditCliKeyFile {
   keys: Array<{ kid: string; jwk: JWK }>;

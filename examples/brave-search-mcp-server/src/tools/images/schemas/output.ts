@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod';
 import { ConfidenceSchema, ExtraSchema } from './response.js';
 
 export const SimplifiedImageResultSchema = z.object({

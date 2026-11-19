@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import * as z from 'zod';
 
 export const summarizerQueryParams = z.object({
   key: z

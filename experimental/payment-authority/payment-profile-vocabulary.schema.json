@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/vocabulary/semantic-validation/schema",
+  "$dynamicAnchor": "meta",
+  "title": "KYA-OS Payment Authority Semantic Validation Vocabulary",
+  "description": "The semantic-validation vocabulary of the KYA-OS Payment Authority Profile (profile section 8.6).",
+  "type": ["object", "boolean"],
+  "properties": {
+    "kyaOrderedNumberRange": { "$ref": "#/$defs/orderedNumberRange" },
+    "kyaNotAfter": { "$ref": "#/$defs/notAfter" },
+    "kyaUniqueProperty": { "$ref": "#/$defs/uniqueProperty" },
+    "kyaUniqueBy": { "$ref": "#/$defs/uniqueBy" },
+    "kyaCanonicalJson": { "$ref": "#/$defs/canonicalJson" },
+    "kyaCanonicalJsonCollection": { "$ref": "#/$defs/canonicalJsonCollection" }
+  },
+  "$defs": {
+    "propertyName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z_$][A-Za-z0-9_$-]*$"
+    },
+    "orderedNumberRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["first", "last"],
+      "properties": {
+        "first": { "$ref": "#/$defs/propertyName" },
+        "last": { "$ref": "#/$defs/propertyName" },
+        "exclusive": { "type": "boolean", "default": false }
+      }
+    },
+    "notAfter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "limitObject", "limit"],
+      "properties": {
+        "value": { "$ref": "#/$defs/propertyName" },
+        "limitObject": { "$ref": "#/$defs/propertyName" },
+        "limit": { "$ref": "#/$defs/propertyName" }
+      }
+    },
+    "uniqueProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["array", "property"],
+      "properties": {
+        "array": { "$ref": "#/$defs/propertyName" },
+        "property": { "$ref": "#/$defs/propertyName" }
+      }
+    },
+    "uniqueBy": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z_$][A-Za-z0-9_$-]*(?:\\.[A-Za-z_$][A-Za-z0-9_$-]*)*$"
+          },
+          "properties": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$-]*(?:\\.[A-Za-z_$][A-Za-z0-9_$-]*)*$"
+            }
+          }
+        }
+      }
+    },
+    "canonicalJson": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxBytes", "maxDepth", "maxNodes"],
+      "properties": {
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "maxDepth": { "type": "integer", "minimum": 1, "maximum": 128 },
+        "maxNodes": { "type": "integer", "minimum": 1, "maximum": 100000 }
+      }
+    },
+    "canonicalJsonCollection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["property", "maxBytes"],
+      "properties": {
+        "property": { "$ref": "#/$defs/propertyName" },
+        "maxBytes": { "type": "integer", "minimum": 1, "maximum": 4194304 }
+      }
+    }
+  }
+}

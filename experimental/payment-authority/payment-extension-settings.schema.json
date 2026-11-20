@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/meta",
+  "$id": "https://schema.kya-os.org/experimental/payment-authority/2026-09-22/mcp-extension-settings",
+  "title": "KYA-OS Payment Authority MCP Extension Settings (Experimental)",
+  "description": "Experimental discussion draft: the settings of the MCP extension org.kya-os/payment-authority (profile section 11). Not stable or ratified.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$",
+      "default": "1.0.0"
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "default": [
+        "org.kya-os/payments.v1"
+      ]
+    },
+    "required": {
+      "type": "boolean",
+      "description": "Server policy (profile section 11).",
+      "default": false
+    }
+  },
+  "additionalProperties": true
+}

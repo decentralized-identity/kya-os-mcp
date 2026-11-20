@@ -1,0 +1,11 @@
+kind: Spec
+body: |-
+    **Entity Card: a Verifier reads no key for a request proof its own
+    claims refuse.** SPEC-ENTITY-CARD.md §11.2 listed key resolution, steps
+    3 and 4, before the audience, the request hash and the window, steps 5
+    to 7, so a Verifier that kept its order read whichever key a proof named
+    before it had checked anything the proof says. Steps 2, 5, 6 and 7 need
+    no key and are now decided first: a Verifier MUST NOT resolve a key for
+    a proof they refuse, or consume its nonce. The steps keep their numbers
+    and their reasons.
+time: 2026-11-19T21:00:10.000000-06:00

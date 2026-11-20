@@ -22,6 +22,8 @@ Check these too, where they apply to you:
 - You sign card proofs with a `ProofSigner` of your own, or attach `_kyaos_delegation` after making a request proof: [A client](#a-client).
 - You run the audit provider contracts against an adapter of your own: [Audit ledger](#audit-ledger).
 - You compare a refusal's words, not its `code`: [A refusal says when the operator's log has why](#a-refusal-says-when-the-operators-log-has-why).
+- You compare the `reasons` of a refused request proof, or count the calls your `resolveKey` gets: [Card](#card).
+- You pass `buildOutboundDelegationHeaders` a target with no scheme: [Delegation gate](#delegation-gate).
 - You counted on a carried chain of more than 10 credentials being refused, or one check of a delegation takes your dependencies more than 30 seconds: [A chain may be any length, and a check has 30 seconds](#a-chain-may-be-any-length-and-a-check-has-30-seconds).
 - Every client of your server signs with 1.26.0 or later: set `delegation.requestBinding: 'require'`, as [A server](#a-server) says.
 
@@ -393,6 +395,10 @@ An agent that re-delegates writes its subject's DID there as it is, with no whit
 The `KYA-OS-Session-Id` header that `buildOutboundDelegationHeaders` writes now carries an anchor of the session for the target's host, `sha256:` and 64 hex digits, and never the session id.
 A downstream service that read the session id from it reads it as an opaque value that stays the same for every call of the session to that host.
 
+`buildOutboundDelegationHeaders` reads a `targetUrl` with no scheme, as `host`, `host:port` or `host/path`, as that host.
+Through 1.25.0 `api.example.com:8443` gave the delegation proof an empty `aud`, and `api.example.com/v1` gave it the whole string.
+A downstream service that accepted either as its audience now accepts its own host.
+
 `buildOutboundDelegationHeaders` throws for a delegation record that is not in force: one that is not active, is before its `notBefore` or past its `notAfter`, or names an audience that does not admit the server.
 Check the record before forwarding the call, or catch the error and refuse the call.
 
@@ -400,6 +406,11 @@ Check the record before forwarding the call, or catch the error and refuse the c
 
 `requireProof` throws a `TypeError` when it is built with a `minLevel` other than `"L3-minus"` or `"L3"`, where a level it does not rank, a misspelt one included, set no floor at all.
 Pass one of the two levels, or leave `minLevel` out.
+
+`verifyCardProof` and `requireProof` decide what a request proof's own claims decide before they read its key: whose key it names, its audience, the request it signs and its window.
+A proof these refuse is answered with those reasons alone, and `resolveKey` and `resolveDidKeys` are not called for it.
+Through 1.25.0 the key was read first, so such a proof could also report `key_unresolvable`, `did_keys_unresolvable`, `kid_not_in_did_document`, `alg_key_mismatch` or `invalid_signature`.
+A check of yours that expects one of those beside a failed claim expects the claim alone.
 
 A verdict about a status list reaches the presenter only once the list's proof verifies.
 Until then the refusal names the list, `the status list at "<url>" could not be read or checked; the verifier's log says why`, and its reason and remedy go to the operator's log.

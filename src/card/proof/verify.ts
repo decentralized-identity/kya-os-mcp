@@ -16,6 +16,11 @@
  * (`token.cnf.jkt === proof.cnf.jkt === thumbprint(resolve(kid))`). Any failure appends a reason;
  * `ok` is true iff there are none.
  *
+ * What the proof's own claims decide is checked first and needs no key: whose key it names, its
+ * audience, the request it signs and its window. A proof names its key before anything has verified
+ * it, and resolving one may be a network read of a document the caller chose, so a proof its claims
+ * refuse is answered with those reasons alone: no key is read for it and no nonce is spent.
+ *
  * A proof also states, in the JWS protected header its signature covers, the delegation its call
  * presents (SPEC.md §7.8). The statement is read from the header that verified and returned for the
  * delegation check to hold the chain to; one that is neither a credential digest nor `none` is
@@ -55,19 +60,18 @@ export async function verifyCardProof(
   req: ToolRequest,
   deps: VerifyProofDeps,
 ): Promise<ProofVerifyResult> {
-  const reasons: string[] = [];
   const timeoutMs = dependencyTimeout(deps.dependencyTimeoutMs);
   const parsed = CardProofMetaSchema.safeParse(proof);
-  if (!parsed.success) return { ok: false, reasons: ['malformed_proof'] };
+  if (!parsed.success) return refused(['malformed_proof']);
   const meta = parsed.data;
 
-  if (meta.kid.split('#')[0] !== meta.did) reasons.push('kid_did_mismatch');
+  // Nothing has verified the key a proof names, so none is read for a proof its own claims refuse.
+  const reasons = await claimRefusals(meta, req, deps);
+  if (reasons.length > 0) return refused(reasons);
 
-  // `resolveKey` (DID-key resolution, possibly a network fetch) and `computeRequestHash` (local JCS +
-  // SHA-256) are INDEPENDENT — run them concurrently. Fail-closed semantics are unchanged: each still
-  // appends its own reason. Caching the resolved key belongs at the injected `resolveKey` seam (the
-  // consumer owns it); verifyCardProof stays a pure, stateless function — no cross-tenant global cache.
-  const [key, computedHash] = await Promise.all([resolveKey(meta.kid, deps, reasons, timeoutMs), computeRequestHash(req)]);
+  // Caching the resolved key belongs at the injected `resolveKey` seam (the consumer owns it);
+  // verifyCardProof stays a pure, stateless function, with no cross-tenant global cache.
+  const key = await resolveKey(meta.kid, deps, reasons, timeoutMs);
   if (key) await assertDidMembership(key, meta.did, deps, reasons, timeoutMs);
   // Bind the declared alg to the resolved key type: an ES256 claim MUST carry a P-256 key, an EdDSA
   // claim an Ed25519 key. `alg` is a signed covered claim, but the KEY type is authoritative here —
@@ -75,9 +79,6 @@ export async function verifyCardProof(
   const algOk = key !== undefined && keyMatchesAlg(key, meta.alg);
   if (key && !algOk) reasons.push('alg_key_mismatch');
 
-  if (meta.audience !== deps.expectedAudience) reasons.push('audience_mismatch');
-  if (meta.requestHash !== computedHash) reasons.push('request_hash_mismatch');
-  checkWindow(meta, deps, reasons);
   const header = key && algOk ? await verifiedHeader(meta, key) : undefined;
   if (key && algOk && header === undefined) reasons.push('invalid_signature');
   // What the proof states of its delegation, from the header the signature just verified over.
@@ -97,6 +98,24 @@ export async function verifyCardProof(
   return ok
     ? { ok, reasons, level, did: meta.did, ...withWarnings, statedDelegation }
     : { ok, reasons, ...withWarnings };
+}
+
+/** A proof refused before any key is read. Its reasons are its codes. */
+function refused(reasons: string[]): ProofVerifyResult {
+  return { ok: false, reasons };
+}
+
+/**
+ * Why a proof's own claims refuse it, decided with no key and no seam beside the clock: that its
+ * `kid` is a key of its `did`, its audience, the request it signs and its window.
+ */
+async function claimRefusals(meta: CardProofMeta, req: ToolRequest, deps: VerifyProofDeps): Promise<string[]> {
+  const reasons: string[] = [];
+  if (meta.kid.split('#')[0] !== meta.did) reasons.push('kid_did_mismatch');
+  if (meta.audience !== deps.expectedAudience) reasons.push('audience_mismatch');
+  if (meta.requestHash !== (await computeRequestHash(req))) reasons.push('request_hash_mismatch');
+  checkWindow(meta, deps, reasons);
+  return reasons;
 }
 
 /** Resolve the signing key for `kid`; fail-closed (records `key_unresolvable`) on throw. */

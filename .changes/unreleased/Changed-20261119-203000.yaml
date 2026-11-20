@@ -1,0 +1,13 @@
+kind: Changed
+body: |-
+    **`verifyCardProof` reads no key for a proof its own claims refuse.**
+    Whose key a proof names, its audience, the request it signs and its
+    window are decided first, with no key. A proof they refuse is answered
+    with those reasons alone: `resolveKey` and `resolveDidKeys` are not
+    called for it and no nonce is spent. Before, the key a proof named was
+    resolved first, so a proof addressed to another verifier, or a stale
+    one, still made a verifier whose resolver reads `did:web` documents
+    read whichever one the proof named. A proof that fails a claim and
+    also has a bad signature now reports the claim alone, and
+    `requireProof` gives the same reasons.
+time: 2026-11-19T20:30:00.000000-06:00

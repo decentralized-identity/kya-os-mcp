@@ -931,6 +931,10 @@ than erroring open.
     token `cnf` ⇒ `L3-minus`; token `cnf` but no proof `cnf` ⇒ `cnf_required_by_token`; `cnf.jkt ≠
     token cnf` ⇒ `cnf_token_mismatch`; all fuse ⇒ `L3`.
 
+Steps 2, 5, 6 and 7 need no key, and a Verifier decides them before the others.
+A proof with a reason from any of them is answered with those reasons alone: a Verifier MUST NOT resolve a key for it (steps 3 and 4) or consume its nonce (step 8).
+A proof names its key before anything has verified it, and resolving that key may be a network read of a document the caller chose.
+
 `ok` is true iff there are no reasons; on success the result carries the derived assurance
 (`L3` / `L3-minus`), the accountable `did`, and what the proof states of its delegation (§8.4): a
 credential digest, `none`, or nothing.

@@ -101,6 +101,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
   your dependencies more than 30 seconds, raise `totalTimeoutMs`.
   UPGRADING.md, "A chain may be any length, and a check has 30 seconds",
   has both.
+- **A request proof its own claims refuse reports those claims alone,
+  and a target with no scheme is read as its host.** If a check of yours
+  expects `key_unresolvable`, `kid_not_in_did_document` or
+  `invalid_signature` beside `audience_mismatch`, `request_hash_mismatch`,
+  `kid_did_mismatch` or a window reason, expect the claim's reason alone.
+  If you pass `buildOutboundDelegationHeaders` a target such as
+  `api.example.com:8443`, its proof's `aud` is now `api.example.com`.
+  UPGRADING.md, "Card" and "Delegation gate", has both.
 
 ### Added
 
@@ -197,6 +205,16 @@ Versioning: https://semver.org/spec/v2.0.0.html
   hops above it verify under a trusted root, and the first failure ends
   the check. UPGRADING.md, "A chain may be any length, and a check has 30
   seconds", has the detail.
+- **`verifyCardProof` reads no key for a proof its own claims refuse.**
+  Whose key a proof names, its audience, the request it signs and its
+  window are decided first, with no key. A proof they refuse is answered
+  with those reasons alone: `resolveKey` and `resolveDidKeys` are not
+  called for it and no nonce is spent. Before, the key a proof named was
+  resolved first, so a proof addressed to another verifier, or a stale
+  one, still made a verifier whose resolver reads `did:web` documents
+  read whichever one the proof named. A proof that fails a claim and
+  also has a bad signature now reports the claim alone, and
+  `requireProof` gives the same reasons.
 
 ### Deprecated
 
@@ -767,6 +785,12 @@ Versioning: https://semver.org/spec/v2.0.0.html
   delegations live. A depth limit now applies only when `maxDepth` is set,
   and a `maxDepth` that is not a positive integer throws a `TypeError`
   where 0 meant 100.
+- **`buildOutboundDelegationHeaders` reads a target given as `host:port`
+  as that host.** `new URL('api.example.com:8443')` parses, with
+  `api.example.com:` as its scheme and no hostname, so such a `targetUrl`
+  gave the delegation proof an empty `aud` and gave every such target the
+  same `KYA-OS-Session-Id` anchor. A target with no scheme, as `host`,
+  `host:port` or `host/path`, is now read as that host.
 
 ### Spec
 
@@ -945,6 +969,14 @@ Versioning: https://semver.org/spec/v2.0.0.html
   spent on one chain. A Verifier may still bound the length as local
   policy. SPEC.md §4.4.2, §6.4 and §6.10 state the reference
   implementation's 30 seconds.
+- **Entity Card: a Verifier reads no key for a request proof its own
+  claims refuse.** SPEC-ENTITY-CARD.md §11.2 listed key resolution, steps
+  3 and 4, before the audience, the request hash and the window, steps 5
+  to 7, so a Verifier that kept its order read whichever key a proof named
+  before it had checked anything the proof says. Steps 2, 5, 6 and 7 need
+  no key and are now decided first: a Verifier MUST NOT resolve a key for
+  a proof they refuse, or consume its nonce. The steps keep their numbers
+  and their reasons.
 
 ### Documentation
 

@@ -167,6 +167,22 @@ describe('buildOutboundDelegationHeaders', () => {
     expect(payload.aud).toBe('api.service.example.com');
   });
 
+  it('reads a target given as host:port, with no scheme, as that host', async () => {
+    const built = async (targetUrl: string) => {
+      const headers = await buildOutboundDelegationHeaders(createTestContext({ targetUrl }));
+      return { aud: decodeJwt(headers['KYA-OS-Delegation-Proof']).aud, anchor: headers['KYA-OS-Session-Id'] };
+    };
+    const full = await built('https://api.service.example.com:8443/v1/resource');
+    const bare = await built('api.service.example.com:8443');
+
+    // `new URL('host:8443')` parses, with `host:` as its scheme and no hostname at all.
+    expect(bare.aud).toBe('api.service.example.com');
+    expect(bare.anchor).toBe(full.anchor);
+    expect((await built('other.example.com:8443')).anchor).not.toBe(bare.anchor);
+    expect((await built('api.service.example.com')).aud).toBe('api.service.example.com');
+    expect((await built('api.service.example.com/v1/resource')).aud).toBe('api.service.example.com');
+  });
+
   it('works with http:// URLs', async () => {
     const context = createTestContext({
       targetUrl: 'http://internal-service.local/api',

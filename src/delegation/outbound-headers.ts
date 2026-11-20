@@ -54,7 +54,7 @@ export interface OutboundDelegationContext {
     kid: string;
     privateKey: string;
   };
-  /** The downstream URL being called */
+  /** The downstream URL being called. One with no scheme, as `host:port`, is read as that host. */
   targetUrl: string;
   /**
    * The credential of `delegation`, as the compact VC-JWT its issuer signed (SPEC §6.2, "The
@@ -169,16 +169,21 @@ function sessionAnchor(sessionId: string, targetHostname: string): Promise<strin
 }
 
 /**
- * Extract hostname from a URL
+ * The host a target names: its hostname, with no port. A target given with no scheme, as `host` or
+ * `host:port`, is read as that host. `new URL('host:8443')` parses, with `host:` as its scheme and
+ * no hostname, which would address the proof to no one and give every such target one anchor.
  */
 function extractHostname(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname;
-  } catch {
-    logger.warn('Failed to parse target URL, using as-is', { url });
-    return url;
+  for (const candidate of [url, `https://${url}`]) {
+    try {
+      const { hostname } = new URL(candidate);
+      if (hostname !== '') return hostname;
+    } catch {
+      // Not a URL in this form.
+    }
   }
+  logger.warn('Target names no host, using it as-is', { url });
+  return url;
 }
 
 /**

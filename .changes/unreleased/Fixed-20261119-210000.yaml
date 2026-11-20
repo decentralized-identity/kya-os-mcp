@@ -1,0 +1,9 @@
+kind: Fixed
+body: |-
+    **`buildOutboundDelegationHeaders` reads a target given as `host:port`
+    as that host.** `new URL('api.example.com:8443')` parses, with
+    `api.example.com:` as its scheme and no hostname, so such a `targetUrl`
+    gave the delegation proof an empty `aud` and gave every such target the
+    same `KYA-OS-Session-Id` anchor. A target with no scheme, as `host`,
+    `host:port` or `host/path`, is now read as that host.
+time: 2026-11-19T21:00:00.000000-06:00

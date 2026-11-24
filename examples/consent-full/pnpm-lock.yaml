@@ -9,14 +9,14 @@ importers:
   .:
     dependencies:
       '@kya-os/consent':
-        specifier: ^0.1.47
-        version: 0.1.47(@types/react@19.2.14)
+        specifier: ^0.4.0
+        version: 0.4.0(@kya-os/mcp@file:../..(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3)))(@lit/react@1.0.8(@types/react@19.2.14))
       '@kya-os/mcp':
         specifier: file:../..
-        version: file:../..(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))
+        version: file:../..(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))
       '@modelcontextprotocol/sdk':
-        specifier: ^1.30.0
-        version: 1.30.0(zod@4.4.3)
+        specifier: ^1.32.2
+        version: 1.32.2(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^20.19.43
@@ -198,8 +198,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@hono/node-server@2.1.8':
-    resolution: {integrity: sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA==}
+  '@hono/node-server@2.1.11':
+    resolution: {integrity: sha512-KzKz9vl4vvr1vgLHamj+g5uonbrj5NwAdO3yzOS6cd2HjALVeOgTgeZOyAzNxejbkfOOPIcvuf/Tg8l1pEFLog==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4 || ^5.0.0-0
@@ -207,8 +207,23 @@ packages:
   '@jridgewell/sourcemap-codec@1.6.0':
     resolution: {integrity: sha512-T7jf+5zgsZHwNJ4lvQ7/aezbyk0nNX+zJVWpmHA7VYsEx7a7qr5Rg5IbtJFqkgze5Y2sruq1RUY8Q837Od7iFw==}
 
-  '@kya-os/consent@0.1.47':
-    resolution: {integrity: sha512-Om2xk3cceTTc7ZoDprKUMyyQVBjq8RCeoP2pYSKKf6KzYTnHo2Kl2yeJtZzVeddCYZ3mQakzMwF5kx63FmvPHw==}
+  '@kya-os/consent@0.4.0':
+    resolution: {integrity: sha512-xTMAr9RwObOojkIeejQ4V77LCTaMidWP0Iy8HXIrvIHzcuP6JjbACEum2r3NouzDHSjBCuMemqQ6t5zNk9i45g==}
+    version: 0.4.0
+    peerDependencies:
+      '@kya-os/id': ^0.6.0 || ^0.7.0 || ^0.8.0
+      '@kya-os/mcp': ^1.20.0
+      '@lit/react': ^1.0.8
+      react: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@kya-os/id':
+        optional: true
+      '@kya-os/mcp':
+        optional: true
+      '@lit/react':
+        optional: true
+      react:
+        optional: true
 
   '@kya-os/mcp@file:../..':
     resolution: {directory: ../.., type: directory}
@@ -230,8 +245,8 @@ packages:
   '@lit/reactive-element@2.1.2':
     resolution: {integrity: sha512-pbCDiVMnne1lYUIaYNN5wrwQXDtHaYtg7YEFPeW+hws6U47WeFvISGUWekPGKWOP1ygrs0ef0o1VJMk1exos5A==}
 
-  '@modelcontextprotocol/sdk@1.30.0':
-    resolution: {integrity: sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==}
+  '@modelcontextprotocol/sdk@1.32.2':
+    resolution: {integrity: sha512-SWsVtH/0vULSQStoZ6xxH2K09Li8fXYTMC64ZeogCdpZ3XSi1eCPOByV1OpuJxuI3OcmHhosDWYyii07tpPsLw==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -656,6 +671,10 @@ packages:
 
   json-schema-typed@8.0.2:
     resolution: {integrity: sha512-fQhoXdcvc3V28x7C7BMs4P5+kNlgUURe2jmUT1T//oBRMDrqy1QPelJimwZGo7Hg9VPV3EQV5Bnq4hbFy2vetA==}
+
+  lean-qr@2.7.4:
+    resolution: {integrity: sha512-tlMPFfqhAAZN7+j/djRSvl/2+AYT2+7RRuyq8bvcbV8gMiENiscquQ9WTfCSyeEdxsVaEB+tU7e9nFZC63BFnQ==}
+    hasBin: true
 
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
@@ -1158,41 +1177,43 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@hono/node-server@2.1.8(hono@4.13.17)':
+  '@hono/node-server@2.1.11(hono@4.13.17)':
     dependencies:
       hono: 4.13.17
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
 
-  '@kya-os/consent@0.1.47(@types/react@19.2.14)':
+  '@kya-os/consent@0.4.0(@kya-os/mcp@file:../..(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3)))(@lit/react@1.0.8(@types/react@19.2.14))':
     dependencies:
-      '@lit/react': 1.0.8(@types/react@19.2.14)
+      lean-qr: 2.7.4
       lit: 3.3.3
       zod: 3.25.76
-    transitivePeerDependencies:
-      - '@types/react'
+    optionalDependencies:
+      '@kya-os/mcp': file:../..(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))
+      '@lit/react': 1.0.8(@types/react@19.2.14)
 
-  '@kya-os/mcp@file:../..(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))':
+  '@kya-os/mcp@file:../..(@modelcontextprotocol/sdk@1.32.2(zod@4.4.3))':
     dependencies:
       jose: 6.2.8
       json-canonicalize: 3.0.1
       zod: 4.4.3
     optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.30.0(zod@4.4.3)
+      '@modelcontextprotocol/sdk': 1.32.2(zod@4.4.3)
 
   '@lit-labs/ssr-dom-shim@1.6.0': {}
 
   '@lit/react@1.0.8(@types/react@19.2.14)':
     dependencies:
       '@types/react': 19.2.14
+    optional: true
 
   '@lit/reactive-element@2.1.2':
     dependencies:
       '@lit-labs/ssr-dom-shim': 1.6.0
 
-  '@modelcontextprotocol/sdk@1.30.0(zod@4.4.3)':
+  '@modelcontextprotocol/sdk@1.32.2(zod@4.4.3)':
     dependencies:
-      '@hono/node-server': 2.1.8(hono@4.13.17)
+      '@hono/node-server': 2.1.11(hono@4.13.17)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
@@ -1298,6 +1319,7 @@ snapshots:
   '@types/react@19.2.14':
     dependencies:
       csstype: 3.2.3
+    optional: true
 
   '@types/trusted-types@2.0.7': {}
 
@@ -1411,7 +1433,8 @@ snapshots:
       shebang-command: 2.0.0
       which: 2.0.2
 
-  csstype@3.2.3: {}
+  csstype@3.2.3:
+    optional: true
 
   debug@4.4.3:
     dependencies:
@@ -1613,6 +1636,8 @@ snapshots:
   json-schema-traverse@1.0.0: {}
 
   json-schema-typed@8.0.2: {}
+
+  lean-qr@2.7.4: {}
 
   lightningcss-android-arm64@1.33.0:
     optional: true

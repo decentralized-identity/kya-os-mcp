@@ -264,9 +264,9 @@ const guard = requireProof({
   consumeNonceIfFresh: nonces.consume,       // test-AND-set; a replayed nonce is rejected
 });
 
-// Pass the EXACT body the client signed (without _meta) plus the _meta that carried the proof.
-const { _meta, ...signedBody } = incomingRequest;
-const verdict = await guard(signedBody, _meta); // { ok: true, did, level } or a 401-shaped reject
+// Pass the call as it arrived ({ method, params }) and the params._meta that carried the proof.
+// The guard leaves _meta out of what it hashes, and a call left with no params is its method alone.
+const verdict = await guard(incomingRequest, incomingRequest.params?._meta); // { ok: true, did, level } or a 401-shaped reject
 ```
 
 Miss the proof, replay a nonce, or tamper the body and `requireProof` fails closed. To go the other direction — DISCOVER and verify another entity's card — use `resolveCard` + `verifyCard` (the verifier recomputes the conformance floor rather than trusting the card).

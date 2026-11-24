@@ -2,7 +2,7 @@
 
 **Compliance levels for KYA-OS implementations**
 
-Version: 1.13.0
+Version: 1.14.0
 Status: Stable
 
 ---
@@ -501,7 +501,7 @@ so it is reproducible against any implementation without re-signing.
 | `vectors/status-list-validity.json` | Status list revocation: the window a list states (SPEC.md §6.6) | clear Bitstring Status List or StatusList2021 list inside its `validFrom` and `validUntil`, or `issuanceDate` and `expirationDate`, stated in UTC or at offsets from it; clear Bitstring Status List inside its window that states a `ttl`, or that states no `validUntil` and a `ttl` that ran out long ago | clear list past its `validUntil` whose `ttl` has not run out; clear list past its `validUntil` or `expirationDate`, before its `validFrom` or `issuanceDate`, with a `validUntil` that is not a date, a `validFrom` or `expirationDate` that states no time zone, or an HTTP-date `validUntil`, or with a past `validUntil` beside a future `expirationDate` |
 | `vectors/did-key-resolution.json` | did:key resolution | valid Ed25519 | malformed multibase, wrong method |
 | `vectors/did-web-resolution.json` | did:web resolution | well-formed id-matched document | document id mismatch, not found |
-| `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery |
+| `vectors/card-proof.json` | `org.kya-os/proof.v1` holder-of-key proof | valid signed proof, in-window, audience-bound; a call with no params held as it travels, with its proof over the method alone or, for the 1.x line, over `{ method, params: {} }` | tampered body, tampered signature, wrong audience, expired, kid⇄did forgery, no nonce seam; the `{ method, params: {} }` proof held against a call whose params hold a member |
 | `vectors/entity-card.json` | Entity Card `parseCard` + `verifyCard` | golden card per `entityType`, accountable agent; its chain signed with a leaf that states the root's `parentCredentialDigest`, or states none | malformed (unknown field), broken accountability JOIN, revocation entry with nothing to check it; a hop past its `expirationDate` or its proof's `expires` with a later `validUntil`, a leaf whose `parentCredentialDigest` is another root's, a root that states one |
 | `vectors/signed-proof-key-relationship.json` | Detached proof key retrieval from the signer's `assertionMethod` (SPEC.md §7.2) | referenced or embedded assertion key; no `kid` with a usable first assertion entry | authentication-only or unlisted key, duplicate definition, foreign controller or document, foreign `kid`, unusable first assertion entry |
 | `vectors/signed-proof-request-binding.json` | A holder's request proof and the delegation presented beside it (SPEC.md §7.8) | proof whose protected header states the digest of the credential presented, as an object or as a VC-JWT, or beside a copy that differs in nothing signed; proof that states `none` for a call that presents none | proof beside another delegation of its holder, one issued again under the same id, or the same one in another form; statement in upper case or in an array; statement changed, or removed, after signing; header that holds the parameter twice; signed `delegationRef` of another credential; for a verifier that requires naming, a proof that states `none` beside a credential, or states nothing |
@@ -668,6 +668,14 @@ Because fresh keys change the committed bytes, regenerated output MUST NOT be co
 
 ### Suite versioning and immutability
 
+Suite 1.14.0 adds three `card-proof` vectors, for 211 vectors total (SPEC-ENTITY-CARD.md §8.3).
+Each holds a `tools/list` call as it travels, its `params` holding only the `_meta` that carries the proof.
+`no-params` is a proof minted for the call with no params, over `{ method }`, and must pass: once `_meta` is removed nothing is left, so the covered request is the method alone.
+`no-params-legacy-form` is a proof over `{ method, params: {} }`, the form a 1.x client may sign for a call given `params: {}`, as the reference does, and must pass for the 1.x line.
+`legacy-form-with-params` holds that proof against a call whose `params` also hold a `cursor`, and must fail.
+`card-proof.json` is generated deterministically, its earlier vectors unchanged; the other vector files change only their `version`.
+The Python cross-language check recomputes the binding of all three.
+
 Suite 1.13.0 adds thirty-seven vectors, for 208 vectors total.
 Two are `delegation-chain` vectors, which must be refused: `subject-id-control-character`, a credential whose `credentialSubject.id` holds a line feed, and `issued-in-future`, a credential whose `issuanceDate` is a century ahead (SPEC.md §6.2).
 Two are `signed-proof` vectors (SPEC.md §7.8): `delegation-chain-other-delegation`, a proof that names its chain held against another delegation of the same agent, which must fail, and `delegation-chain-refused-leaf-alone`, a refusal of a presented credential whose signature fails under ancestors that verify, which binds that credential alone and must pass held against it.
@@ -763,6 +771,7 @@ Suite 1.11.0 adds `signed-proof/legacy-request-shape` and `signed-proof/legacy-r
 Suite 1.12.0 adds `status-list/legacy-encoding-2021`, which a verifier that reads an `encodedList` only in the form a publisher writes fails, `status-list/short-list`, which a verifier that refuses a list of fewer than 131,072 entries fails, `status-list/index-past-minimum`, which a verifier that bounds an index by 131,071, or wraps it, fails, and `status-list/index-past-end`, which a verifier that reads a bit past a list's end as clear fails.
 Suite 1.13.0 adds `entity-card/hop-parent-digest`, which a verifier that decodes a `proofValue` as base58 before digesting it fails, and `entity-card/hop-parent-digest-reissued-root`, which a verifier that checks no `parentCredentialDigest` fails.
 It also adds `signed-proof-request-binding.json`, which a verifier that does not hold a request proof to the delegation statement of its protected header fails, and `delegation-chain/parent-digest-reissued-parent`, which a verifier that checks no `parentCredentialDigest` in a §6.2 credential fails.
+Suite 1.14.0 adds `card-proof/no-params`, which a verifier that hashes the empty `params` a call is left with once `_meta` is removed fails, and `card-proof/no-params-legacy-form`, which a verifier that accepts only the covered request fails.
 The SIGNED public suite manifest published by the Conformance Attestation Program is a separate artifact built on this committed one.
 
 ### Running the harness against YOUR implementation
@@ -929,6 +938,9 @@ Expected output:
 KYA-OS cross-language verifier (Python 3.x, stdlib-only)
   proof: org.kya-os/proof.v1  did: did:web:example.com:agents:acme-pay
   [PASS] requestHash JCS+SHA-256 recompute
+  [PASS] requestHash of a call with no params, from the call as it travels
+  [PASS] 1.x legacy requestHash over { method, params: {} } binds a call with no params
+  [PASS] 1.x legacy requestHash does not bind a call whose params hold a member
   [PASS] detached EdDSA JWS over JCS(coveredClaims)
   [PASS] RFC 9421 httpSig over the signature base
   [PASS] RFC 7638 cnf.jkt thumbprint fusion

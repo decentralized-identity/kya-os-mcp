@@ -2,24 +2,33 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schema.kya-os.org/v1/protocol/handshake/response/v1.0.0",
   "title": "KYA-OS Handshake Response",
-  "description": "Server response to a successful handshake request, establishing session context.",
+  "description": "Server response to a successful handshake request, establishing session context (SPEC.md §5.3). The server sends it as JSON text in the first content item of the handshake tool's result. A refusal is { success: false, protocolVersion, error } with isError set, and is not described here.",
   "type": "object",
   "required": ["sessionId", "serverDid", "protocolVersion"],
   "properties": {
+    "success": {
+      "const": true,
+      "description": "Set by the reference implementation, which also answers a refusal with success: false."
+    },
     "sessionId": {
       "type": "string",
       "minLength": 1,
-      "description": "Unique session identifier. Clients MUST include this in subsequent requests."
+      "description": "Unique session identifier. A client names it on each tool call in params._meta[\"org.kya-os/session\"] (SPEC.md §14)."
     },
     "serverDid": {
       "type": "string",
-      "pattern": "^did:(key|web):.+$",
+      "pattern": "^did:[a-z0-9]+:.+$",
       "description": "The server's DID used for proof verification."
+    },
+    "serverKid": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The verification method of serverDid the server signs its proofs with."
     },
     "protocolVersion": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+$",
-      "description": "Negotiated KYA-OS protocol version (e.g., '1.0')."
+      "description": "The KYA-OS protocol version the server speaks, as MAJOR.MINOR (e.g., '1.0'; SPEC.md §13)."
     },
     "serverCapabilities": {
       "type": "object",
@@ -53,8 +62,10 @@
   "additionalProperties": false,
   "examples": [
     {
-      "sessionId": "sess_abc123xyz",
+      "success": true,
+      "sessionId": "kyaos_6f1c2a4e-9b7d-4c3e-8a5f-2d1e0b9c8a7f",
       "serverDid": "did:web:api.example.com",
+      "serverKid": "did:web:api.example.com#key-1",
       "protocolVersion": "1.0",
       "serverCapabilities": {
         "proofs": true,

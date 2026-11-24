@@ -37,7 +37,7 @@ import { nonceRetentionSeconds } from '../../providers/nonce-retention.js';
 import { isSmallOrderEd25519CryptoKey } from '../../utils/ed25519-public-key.js';
 import { isRecord } from '../../utils/guards.js';
 import type { ProofPublicJwk } from '../schema.js';
-import { canonicalPayloadBytes, computeRequestHash } from './canonical.js';
+import { canonicalPayloadBytes, requestHashMatches } from './canonical.js';
 import {
   CardProofMetaSchema,
   DEFAULT_SKEW_SEC,
@@ -113,7 +113,7 @@ async function claimRefusals(meta: CardProofMeta, req: ToolRequest, deps: Verify
   const reasons: string[] = [];
   if (meta.kid.split('#')[0] !== meta.did) reasons.push('kid_did_mismatch');
   if (meta.audience !== deps.expectedAudience) reasons.push('audience_mismatch');
-  if (meta.requestHash !== (await computeRequestHash(req))) reasons.push('request_hash_mismatch');
+  if (!(await requestHashMatches(meta.requestHash, req))) reasons.push('request_hash_mismatch');
   checkWindow(meta, deps, reasons);
   return reasons;
 }

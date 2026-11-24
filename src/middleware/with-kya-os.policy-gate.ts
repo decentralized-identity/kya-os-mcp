@@ -24,6 +24,12 @@ import type {
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import {
+  carried,
+  KYA_OS_APPROVALS_META_KEY,
+  KYA_OS_DELEGATION_META_KEY,
+  metaCarries,
+} from "./request-meta.js";
+import {
   DEFAULT_APPROVALS_KEY,
   extractPolicyPrincipal,
   sanitizeForMessage,
@@ -72,13 +78,22 @@ export function createPolicyGate(
     ) => {
       requireProofLayer();
       // Composed after wrapWithDelegation, the approvals argument has already
-      // been stripped and arrives in the call context; restore it so a step-up
-      // resume verifies the same grants either way. The restored copy is only
-      // read, never hashed or handed on: the client did not send it there.
-      const args =
-        callArgs[approvalsKey] === undefined && context?.approvals !== undefined
-          ? { ...callArgs, [approvalsKey]: context.approvals }
-          : callArgs;
+      // been stripped and arrives in the call context; on its own, the gate
+      // reads grants a call carries in its params._meta (SPEC.md §14). Either
+      // way they are restored, so a step-up resume verifies the same grants.
+      // The restored copy is only read, never hashed or handed on: the client
+      // did not send it there.
+      const requestMeta = context?.requestMeta;
+      // The session a call names is proved under only where the proof layer
+      // would prove a call that names none, from the context passed with each
+      // outcome proof, and is no more than that (SPEC.md §14).
+      const proofSession = sessionId;
+      // Grants in params._meta are the call's, even stated as null, and the
+      // argument is then not read; otherwise the argument, or the context's.
+      const approvals = metaCarries(requestMeta, KYA_OS_APPROVALS_META_KEY)
+        ? requestMeta![KYA_OS_APPROVALS_META_KEY]
+        : callArgs[approvalsKey] ?? context?.approvals;
+      const args = approvals === callArgs[approvalsKey] ? callArgs : { ...callArgs, [approvalsKey]: approvals };
 
       // The call as received, without its _kyaos* control arguments (SPEC
       // §7.3's covered request): what the handler runs with, what an inner
@@ -93,7 +108,7 @@ export function createPolicyGate(
       // gate. Standalone, the raw `_kyaos_delegation` is unverified: it yields
       // the subject and scopes it claims and never a Responsible Party.
       const principal: NonNullable<KyaOsCallContext["principal"]> =
-        context?.principal ?? extractPolicyPrincipal(args["_kyaos_delegation"]);
+        context?.principal ?? extractPolicyPrincipal(carried(KYA_OS_DELEGATION_META_KEY, args, requestMeta));
 
       const policyRequest = buildPolicyRequest({
         principal: {
@@ -154,9 +169,10 @@ export function createPolicyGate(
           denied,
           toolName,
           callArgs,
-          sessionId,
+          proofSession,
           decision.reason,
           "denied",
+          context,
         );
       }
 
@@ -202,9 +218,10 @@ export function createPolicyGate(
         stepUp,
         toolName,
         callArgs,
-        sessionId,
+        proofSession,
         decision.reason,
         "step_up_required",
+        context,
       );
     };
   }

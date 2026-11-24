@@ -1,5 +1,5 @@
 {
-  "version": "1.13.0",
+  "version": "1.14.0",
   "category": "card-proof",
   "vectors": [
     {
@@ -344,6 +344,190 @@
         "nowMs": 1782820800000,
         "skewSeconds": 5,
         "omitNonceSeam": true
+      }
+    },
+    {
+      "id": "card-proof/no-params",
+      "category": "card-proof",
+      "description": "A proof minted for tools/list, a call with no params, held against the call as it travels: params holding only the _meta that carries the proof",
+      "expected": "pass",
+      "reason": "The covered request is read from the call alone: params left with no member once _meta is removed are left out, so minter and verifier both hash { method } (SPEC-ENTITY-CARD §8.3)",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof.v1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-no-params-000000000000000000000",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:9lTV7g1JvyD1NVNhUBTIkgNi0UVBVON3ql5ZiysOBWE=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIiwib3JnLmt5YS1vcy9kZWxlZ2F0aW9uIjoibm9uZSJ9..D9q7jEBmicNtv2bFMekdK6dk7mGTlVEEVst4vGeOqhhVM_7zlUJQ5BUCm9u54SS2z243PgLVO0q_J7pVbzQ8AQ",
+          "httpSig": "nWFC1JDV0Tqq6BSjpIFSh8xmGxtJRS_mfY4e9I_K8Jff20R8kp6WD9UjIRfF378iaU2Md9ke2IxxfCvngtkUAg"
+        },
+        "request": {
+          "method": "tools/list",
+          "params": {
+            "_meta": {
+              "org.kya-os/request-proof": {
+                "prf": "org.kya-os/proof.v1",
+                "alg": "EdDSA",
+                "did": "did:web:example.com:agents:acme-pay",
+                "kid": "did:web:example.com:agents:acme-pay#key-1",
+                "audience": "did:web:example.com:mcp:server",
+                "nonce": "n-no-params-000000000000000000000",
+                "created": 1782820800,
+                "expires": 1782820860,
+                "requestHash": "sha-256=:9lTV7g1JvyD1NVNhUBTIkgNi0UVBVON3ql5ZiysOBWE=:",
+                "cnf": {
+                  "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+                },
+                "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIiwib3JnLmt5YS1vcy9kZWxlZ2F0aW9uIjoibm9uZSJ9..D9q7jEBmicNtv2bFMekdK6dk7mGTlVEEVst4vGeOqhhVM_7zlUJQ5BUCm9u54SS2z243PgLVO0q_J7pVbzQ8AQ",
+                "httpSig": "nWFC1JDV0Tqq6BSjpIFSh8xmGxtJRS_mfY4e9I_K8Jff20R8kp6WD9UjIRfF378iaU2Md9ke2IxxfCvngtkUAg"
+              }
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/no-params-legacy-form",
+      "category": "card-proof",
+      "description": "A proof for tools/list whose requestHash is over { method, params: {} }, held against the call as it travels",
+      "expected": "pass",
+      "reason": "For the 1.x line a verifier also accepts the legacy form { method, params: {} } when the covered request is { method } (SPEC-ENTITY-CARD §8.3)",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof.v1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-empty-params-000000000000000000",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:bmLEqYjta7OhnDUKyKZ5eo2tWfMVLPznHkyvFtxFIlU=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIiwib3JnLmt5YS1vcy9kZWxlZ2F0aW9uIjoibm9uZSJ9..2gVFFVQh3SO1YckXSITZphPKpQhAoMInCDHnTKdt71mkft6-WuYuONZdG-lEfQFVJ6IwGAhGDiM4REvoeMACBw",
+          "httpSig": "PlRupDrVvDcyeOp6g8ASxGW0KdQIB4_pLDQ2Vq71IqJ0_izylG1SMSHR__oFbK2BAsqhG7gbOhpkMrwquvhaAA"
+        },
+        "request": {
+          "method": "tools/list",
+          "params": {
+            "_meta": {
+              "org.kya-os/request-proof": {
+                "prf": "org.kya-os/proof.v1",
+                "alg": "EdDSA",
+                "did": "did:web:example.com:agents:acme-pay",
+                "kid": "did:web:example.com:agents:acme-pay#key-1",
+                "audience": "did:web:example.com:mcp:server",
+                "nonce": "n-empty-params-000000000000000000",
+                "created": 1782820800,
+                "expires": 1782820860,
+                "requestHash": "sha-256=:bmLEqYjta7OhnDUKyKZ5eo2tWfMVLPznHkyvFtxFIlU=:",
+                "cnf": {
+                  "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+                },
+                "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIiwib3JnLmt5YS1vcy9kZWxlZ2F0aW9uIjoibm9uZSJ9..2gVFFVQh3SO1YckXSITZphPKpQhAoMInCDHnTKdt71mkft6-WuYuONZdG-lEfQFVJ6IwGAhGDiM4REvoeMACBw",
+                "httpSig": "PlRupDrVvDcyeOp6g8ASxGW0KdQIB4_pLDQ2Vq71IqJ0_izylG1SMSHR__oFbK2BAsqhG7gbOhpkMrwquvhaAA"
+              }
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
+      }
+    },
+    {
+      "id": "card-proof/legacy-form-with-params",
+      "category": "card-proof",
+      "description": "The same legacy-form proof held against a tools/list call whose params hold a cursor",
+      "expected": "fail",
+      "reason": "The legacy form stands in only for a covered request with no params; a call with a params member is covered with it, and the hash no longer matches",
+      "input": {
+        "proof": {
+          "prf": "org.kya-os/proof.v1",
+          "alg": "EdDSA",
+          "did": "did:web:example.com:agents:acme-pay",
+          "kid": "did:web:example.com:agents:acme-pay#key-1",
+          "audience": "did:web:example.com:mcp:server",
+          "nonce": "n-empty-params-000000000000000000",
+          "created": 1782820800,
+          "expires": 1782820860,
+          "requestHash": "sha-256=:bmLEqYjta7OhnDUKyKZ5eo2tWfMVLPznHkyvFtxFIlU=:",
+          "cnf": {
+            "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+          },
+          "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIiwib3JnLmt5YS1vcy9kZWxlZ2F0aW9uIjoibm9uZSJ9..2gVFFVQh3SO1YckXSITZphPKpQhAoMInCDHnTKdt71mkft6-WuYuONZdG-lEfQFVJ6IwGAhGDiM4REvoeMACBw",
+          "httpSig": "PlRupDrVvDcyeOp6g8ASxGW0KdQIB4_pLDQ2Vq71IqJ0_izylG1SMSHR__oFbK2BAsqhG7gbOhpkMrwquvhaAA"
+        },
+        "request": {
+          "method": "tools/list",
+          "params": {
+            "cursor": "c-2",
+            "_meta": {
+              "org.kya-os/request-proof": {
+                "prf": "org.kya-os/proof.v1",
+                "alg": "EdDSA",
+                "did": "did:web:example.com:agents:acme-pay",
+                "kid": "did:web:example.com:agents:acme-pay#key-1",
+                "audience": "did:web:example.com:mcp:server",
+                "nonce": "n-empty-params-000000000000000000",
+                "created": 1782820800,
+                "expires": 1782820860,
+                "requestHash": "sha-256=:bmLEqYjta7OhnDUKyKZ5eo2tWfMVLPznHkyvFtxFIlU=:",
+                "cnf": {
+                  "jkt": "0Z9PGGnrUbAvSHRWxKkBxjgrUrvu6ETEhOl2StPyW7c"
+                },
+                "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDp3ZWI6ZXhhbXBsZS5jb206YWdlbnRzOmFjbWUtcGF5I2tleS0xIiwib3JnLmt5YS1vcy9kZWxlZ2F0aW9uIjoibm9uZSJ9..2gVFFVQh3SO1YckXSITZphPKpQhAoMInCDHnTKdt71mkft6-WuYuONZdG-lEfQFVJ6IwGAhGDiM4REvoeMACBw",
+                "httpSig": "PlRupDrVvDcyeOp6g8ASxGW0KdQIB4_pLDQ2Vq71IqJ0_izylG1SMSHR__oFbK2BAsqhG7gbOhpkMrwquvhaAA"
+              }
+            }
+          }
+        },
+        "jwks": {
+          "keys": [
+            {
+              "kty": "OKP",
+              "crv": "Ed25519",
+              "x": "RvWVWwqcVO9f_7aQ8dXf0F16aoQsE4i_Ebjqo8mn_Ts",
+              "kid": "did:web:example.com:agents:acme-pay#key-1"
+            }
+          ]
+        },
+        "expectedAudience": "did:web:example.com:mcp:server",
+        "nowMs": 1782820800000,
+        "skewSeconds": 5
       }
     }
   ]

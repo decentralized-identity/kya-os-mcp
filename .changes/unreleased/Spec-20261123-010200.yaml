@@ -1,0 +1,13 @@
+kind: Spec
+body: |-
+    **SPEC.md §14: one table says where a `tools/call` carries each KYA-OS
+    datum.** Its session, delegation, holder-of-key proof and approval
+    grants ride `params._meta`, under `org.kya-os/session`,
+    `org.kya-os/delegation-credential`, `org.kya-os/holder-proof` and
+    `org.kya-os/approvals`. For the 1.x line a server also reads the
+    `_kyaos_*` arguments, and reads `params._meta` when a call carries a
+    datum both ways. The handshake tool is `_kyaos` with `action:
+    "handshake"`. §11.7 no longer refuses a call for naming no session,
+    which §5 makes optional. `toMcpToolCallback` and the `withKyaOs`
+    transport read the call's `params._meta`.
+time: 2026-11-23T01:02:00.000000-06:00

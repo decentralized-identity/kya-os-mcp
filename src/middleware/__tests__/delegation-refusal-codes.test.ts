@@ -17,6 +17,8 @@ import { logger } from '../../logging/index.js';
 import { WRAPPED_REASON_LENGTH } from '../../utils/revocation-answer.js';
 import type { DelegationCredential } from '../../types/protocol.js';
 import type { KyaOsDelegationConfig } from '../with-kya-os.js';
+import type { KyaOsCallContext } from '../with-kya-os.types.js';
+import { KYA_OS_DELEGATION_META_KEY } from '../request-meta.js';
 import { NodeCryptoProvider } from '../../__tests__/utils/node-crypto-provider.js';
 import { CryptoProviderAuditHasher } from '../../audit/crypto.js';
 import { MemoryAuditJournal } from '../../audit/providers/memory-journal.js';
@@ -193,6 +195,24 @@ describe('a delegation the gate refuses', () => {
     expect(Object.keys(body).sort()).toEqual(['error', 'reason']);
     expect(body.error).toBe(code);
     expect(warn.mock.calls.find(([text]) => String(text).startsWith(`[kya-os] ${line}`))?.[1]).toEqual({ code, transient: false });
+  });
+
+  // Adopters match this reason word for word, so it stays as 1.26.0 gave it for the whole 1.x line,
+  // whichever carrier the delegation came in.
+  it.each<[string, (credential: DelegationCredential) => [Record<string, unknown>, KyaOsCallContext | undefined]]>([
+    ['in its arguments', (credential) => [{ ...ARGS, _kyaos_delegation: credential }, undefined]],
+    ['in params._meta', (credential) => [{ ...ARGS }, { requestMeta: { [KYA_OS_DELEGATION_META_KEY]: credential } }]],
+  ])('refuses a delegation %s with no holder-of-key proof with the reason 1.26.0 gave', async (_name, call) => {
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { kyaos } = await makeServer({ holderBinding: 'enforce' });
+    const [user, agent] = await Promise.all([party(), party()]);
+    const [args, context] = call(await granted(user, agent));
+    const result = await kyaos.wrapWithDelegation(TOOL, CONSENT, released)(args, undefined, context);
+    const body = JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>;
+    expect(body).toEqual({
+      error: 'holder_binding_failed',
+      reason: 'Holder-of-key proof (_kyaos_proof) is required for this delegation subject',
+    });
   });
 
   it.each<[string, unknown, string]>([

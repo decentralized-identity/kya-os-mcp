@@ -49,7 +49,7 @@ Changes to either document are mirrored in the same change set.
 
 The extension defines **no tools and no new JSON-RPC methods**.
 Both proof keys are role-named; versions live inside the objects, never in keys (the request proof's format version rides its `prf` field). The response-proof object is shared with the KYA-OS 1.x profile, distinguished by its own fields (KYA-OS Spec §7.5-§7.6); prior keys stay read-accepted for one major version.
-The KYA-OS session machinery and `_kyaos_handshake` tool (KYA-OS Spec §5, §14), the legacy session-bound proof (Entity Card §15.5, Appendix D.4), and the legacy top-level `proof` result member are outside this extension.
+The KYA-OS session machinery and `_kyaos` handshake tool (KYA-OS Spec §5, §14), the legacy session-bound proof (Entity Card §15.5, Appendix D.4), and the legacy top-level `proof` result member are outside this extension.
 
 The full request cycle, including the consent step-up that issues a delegation credential:
 

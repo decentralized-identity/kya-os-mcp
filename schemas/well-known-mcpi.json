@@ -9,7 +9,7 @@
     "version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
-      "description": "KYA-OS protocol version supported by this server (the reference implementation advertises \"1.0.0\")."
+      "description": "KYA-OS protocol version this server speaks, as MAJOR.MINOR (SPEC.md §13); the MAJOR.MINOR.PATCH form of 1.x documents is read by its major and minor version."
     },
     "serverDid": {
       "type": "string",

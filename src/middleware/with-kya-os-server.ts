@@ -248,6 +248,12 @@ export async function withKyaOs(
             .string()
             .optional()
             .describe("Client agent DID (handshake, optional)"),
+          // Advertised as a string, since some clients refuse a schema with no type. A value of
+          // another type is taken as absent, not refused: the 1.x line reads a value that is not a
+          // version as none (SPEC.md §13).
+          clientProtocolVersion: z
+            .preprocess((value) => (typeof value === "string" ? value : undefined), z.string().optional())
+            .describe("KYA-OS protocol version the client speaks, as a MAJOR.MINOR string (handshake, optional)"),
         },
       },
       async (args: unknown) => {

@@ -14,6 +14,7 @@ import {
   type KyaOsToolDefinition,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
+import { KYA_OS_PROTOCOL_VERSION } from "../session/protocol-version.js";
 
 type ProtocolResponse = {
   content: Array<{ type: string; text: string }>;
@@ -48,12 +49,16 @@ export function createProtocol(
         nonce: { type: "string", description: "Client-generated unique nonce" },
         audience: {
           type: "string",
-          description: "Intended audience (server DID or URL)",
+          description: "Intended audience: the server's DID",
         },
         timestamp: { type: "number", description: "Unix epoch seconds" },
         agentDid: {
           type: "string",
           description: "Client agent DID (optional)",
+        },
+        clientProtocolVersion: {
+          type: "string",
+          description: "KYA-OS protocol version the client speaks, as MAJOR.MINOR (optional; SPEC.md §13)",
         },
       },
       required: ["nonce", "audience", "timestamp"],
@@ -75,12 +80,16 @@ export function createProtocol(
         nonce: { type: "string", description: "Client-generated unique nonce" },
         audience: {
           type: "string",
-          description: "Intended audience (server DID or URL)",
+          description: "Intended audience: the server's DID",
         },
         timestamp: { type: "number", description: "Unix epoch seconds" },
         agentDid: {
           type: "string",
           description: "Client agent DID (optional)",
+        },
+        clientProtocolVersion: {
+          type: "string",
+          description: "KYA-OS protocol version the client speaks, as MAJOR.MINOR (optional; SPEC.md §13)",
         },
       },
       required: ["action"],
@@ -106,7 +115,7 @@ export function createProtocol(
             kid: identity.kid,
             name: config.identity.agentName ?? identity.did,
             capabilities: ["handshake", "signing", "verification"],
-            protocolVersion: "1.0.0",
+            protocolVersion: KYA_OS_PROTOCOL_VERSION,
             clockSkewSeconds: sessionManager.getStats().config.timestampSkewSeconds,
             auditAssurance,
           }),

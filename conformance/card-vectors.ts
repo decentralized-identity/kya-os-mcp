@@ -12,9 +12,13 @@
  *   run:  tsx conformance/card-vectors.ts   (npm run conformance:generate:card)
  */
 
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { buildCardProof, ed25519SignerFromJwk, type CardProofMeta } from '../src/card/index.js';
+import { buildCardProof, ed25519SignerFromJwk, httpSignatureBaseBytes, type CardProofMeta } from '../src/card/index.js';
 import { KYA_OS_CARD_PROOF_META_KEY } from '../src/card/index.js';
+import { canonicalPayloadBytes } from '../src/card/proof/canonical.js';
+import { statementParameters } from '../src/delegation/stated-delegation.js';
+import { webCryptoSha256 } from '../src/utils/domain-digest.js';
 import { cardChainVectors } from './card-chain-vectors.js';
 import type { ConformanceVector, VectorFile } from './types.js';
 import { flipSignatureChar } from './tampering.js';
@@ -37,16 +41,42 @@ import {
 
 const clock = (): number => T0_MS;
 
-/** Mint a signed `org.kya-os/proof.v1` for {@link REQUEST} under the given identity. */
+/** Mint a signed `org.kya-os/proof.v1` for `opts.request` ({@link REQUEST} by default) under the given identity. */
 async function mintProof(opts: {
   did: string;
   kid: string;
   nonce: string;
   audience: string;
+  request?: { method: string; params?: unknown };
 }): Promise<CardProofMeta> {
   const signer = await ed25519SignerFromJwk({ did: opts.did, kid: opts.kid, privateJwk: ENTITY_KEY });
-  const env = await buildCardProof(REQUEST, signer, { audience: opts.audience, nonce: opts.nonce, now: clock });
+  const env = await buildCardProof(opts.request ?? REQUEST, signer, { audience: opts.audience, nonce: opts.nonce, now: clock });
   return env[KYA_OS_CARD_PROOF_META_KEY];
+}
+
+/** A call with no params: `tools/list` as its caller makes it. */
+const LIST_CALL = { method: 'tools/list' };
+
+/** `call` as it travels with `proof` in its `params._meta` (SPEC-ENTITY-CARD §8.2). */
+function carrying(call: { method: string; params?: Record<string, unknown> }, proof: CardProofMeta): unknown {
+  return { ...call, params: { ...call.params, _meta: { [KYA_OS_CARD_PROOF_META_KEY]: proof } } };
+}
+
+/**
+ * A proof for `tools/list` whose `requestHash` is over `{ method, params: {} }`, the form 1.26.0
+ * and earlier minted for a call given `params: {}` (SPEC-ENTITY-CARD §8.3, legacy form in 1.x):
+ * the claims of a proof minted now for the call, with that `requestHash`, signed again.
+ */
+async function mintOverEmptyParams(nonce: string): Promise<CardProofMeta> {
+  const signer = await ed25519SignerFromJwk({ did: ENTITY_DID, kid: KID, privateJwk: ENTITY_KEY });
+  const minted = await mintProof({ did: ENTITY_DID, kid: KID, nonce, audience: AUDIENCE, request: LIST_CALL });
+  const legacy = createHash('sha256').update(JSON.stringify({ method: LIST_CALL.method, params: {} })).digest('base64');
+  const { httpSig: _httpSig, ...claims } = minted;
+  const unsigned: CardProofMeta = { ...claims, requestHash: `sha-256=:${legacy}:`, jws: '' };
+  const stated = await statementParameters(undefined, undefined, webCryptoSha256);
+  const signed: CardProofMeta = { ...unsigned, jws: await signer.sign(canonicalPayloadBytes(unsigned), stated) };
+  if (!signer.signRaw) return signed;
+  return { ...signed, httpSig: await signer.signRaw(httpSignatureBaseBytes(signed)) };
 }
 
 interface ProofInputOverrides {
@@ -76,6 +106,8 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
   // signer — authentically signed, so only the kid⇄did binding rejects it.
   const forged = await mintProof({ did: VICTIM_DID, kid: KID, nonce: 'n-forgery-00000000000000000000', audience: AUDIENCE });
   const tamperedSig: CardProofMeta = { ...valid, jws: flipSignatureChar(valid.jws) };
+  const noParams = await mintProof({ did: ENTITY_DID, kid: KID, nonce: 'n-no-params-000000000000000000000', audience: AUDIENCE, request: LIST_CALL });
+  const overEmptyParams = await mintOverEmptyParams('n-empty-params-000000000000000000');
   const tamperedRequest = {
     method: 'tools/call',
     params: { name: 'payments.transfer', arguments: { to: 'did:web:merchant.example', amount: '9999.00', currency: 'USD' } },
@@ -137,6 +169,30 @@ export async function cardProofVectorFile(): Promise<VectorFile> {
       expected: 'fail',
       reason: 'Without an atomic consumeNonceIfFresh seam there is no replay defense — fail closed (nonce_seam_missing)',
       input: proofInput(valid, { omitNonceSeam: true }),
+    },
+    {
+      id: 'card-proof/no-params',
+      category: 'card-proof',
+      description: 'A proof minted for tools/list, a call with no params, held against the call as it travels: params holding only the _meta that carries the proof',
+      expected: 'pass',
+      reason: 'The covered request is read from the call alone: params left with no member once _meta is removed are left out, so minter and verifier both hash { method } (SPEC-ENTITY-CARD §8.3)',
+      input: proofInput(noParams, { request: carrying(LIST_CALL, noParams) }),
+    },
+    {
+      id: 'card-proof/no-params-legacy-form',
+      category: 'card-proof',
+      description: 'A proof for tools/list whose requestHash is over { method, params: {} }, held against the call as it travels',
+      expected: 'pass',
+      reason: 'For the 1.x line a verifier also accepts the legacy form { method, params: {} } when the covered request is { method } (SPEC-ENTITY-CARD §8.3)',
+      input: proofInput(overEmptyParams, { request: carrying(LIST_CALL, overEmptyParams) }),
+    },
+    {
+      id: 'card-proof/legacy-form-with-params',
+      category: 'card-proof',
+      description: 'The same legacy-form proof held against a tools/list call whose params hold a cursor',
+      expected: 'fail',
+      reason: 'The legacy form stands in only for a covered request with no params; a call with a params member is covered with it, and the hash no longer matches',
+      input: proofInput(overEmptyParams, { request: carrying({ ...LIST_CALL, params: { cursor: 'c-2' } }, overEmptyParams) }),
     },
   ];
 

@@ -28,6 +28,7 @@ import { delegationCredentialDigest, type ReceivedCredential } from "../delegati
 import { warnOfNoneAmongGrants, warnOfUnnamedProof } from "../delegation/unnamed-proof-warning.js";
 import { logger } from "../logging/index.js";
 import type { MiddlewareDeps } from "./with-kya-os.deps.js";
+import { carried, KYA_OS_HOLDER_PROOF_META_KEY } from "./request-meta.js";
 
 /**
  * A durable grant whose retained delegation re-verified for this call, with
@@ -55,6 +56,7 @@ export interface GrantResolution {
     args: Record<string, unknown>,
     sessionId: string | undefined,
     scopeId: string,
+    requestMeta?: Readonly<Record<string, unknown>>,
   ): Promise<ResolvedGrant | undefined>;
   /**
    * Mint a durable grant from a freshly-verified delegation so the NEXT call —
@@ -174,15 +176,20 @@ export function createGrantResolution(
 
   /**
    * The holder a no-delegation call proves itself to be, or undefined. The
-   * agent DID is taken from the `_kyaos_proof` and re-proven per request
+   * agent DID is taken from the call's holder proof (`params._meta`, or the
+   * 1.x `_kyaos_proof` argument, SPEC.md §14) and re-proven per request
    * (possession of the subject key over THIS request), never trusted from a
    * bearer hint. This is the single most security-sensitive gate of the
    * durable-consent change: without it, any caller who knows agent A's DID
    * could replay A's grant (confused-deputy escalation, spec §A.4).
    */
-  async function provenHolder(toolName: string, args: Record<string, unknown>): Promise<Holder | undefined> {
+  async function provenHolder(
+    toolName: string,
+    args: Record<string, unknown>,
+    requestMeta: Readonly<Record<string, unknown>> | undefined,
+  ): Promise<Holder | undefined> {
     if (!holderBindingVerifier) return undefined; // inert unless holder binding is on
-    const proofArg = args["_kyaos_proof"];
+    const proofArg = carried(KYA_OS_HOLDER_PROOF_META_KEY, args, requestMeta);
     if (proofArg === undefined) return undefined;
     let parsedProof: unknown = proofArg;
     if (typeof proofArg === "string") {
@@ -264,8 +271,9 @@ export function createGrantResolution(
     args: Record<string, unknown>,
     sessionId: string | undefined,
     scopeId: string,
+    requestMeta?: Readonly<Record<string, unknown>>,
   ): Promise<ResolvedGrant | undefined> {
-    const holder = await provenHolder(toolName, args);
+    const holder = await provenHolder(toolName, args, requestMeta);
     if (holder !== undefined) {
       // A session-bound grant is usable only from its own session; an
       // agent-anchored (session-less) grant is portable across transports.

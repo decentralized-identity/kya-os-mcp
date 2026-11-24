@@ -545,8 +545,9 @@ the minter and the Verifier MUST apply the same derivation:
    it carries this proof itself (§8.2), and hosts may add their own members to it (MCP's
    `progressToken`, for example), so it can never be part of the signed material. Nothing else is
    removed, and values nested below the other `params` members are not touched.
-3. When `params` is absent, the covered request is `{ method }` (the `params` key is omitted, not
-   set to `null`).
+3. When `params` is then absent, `null`, or an object with no members, the covered request is
+   `{ method }` (the `params` key is omitted, not set to `null` or `{}`).
+   An array `params` is kept as it is.
 
 The hash is then computed over the covered request:
 
@@ -564,6 +565,17 @@ and the result could never equal the hash the minter signed (the minter signs be
 exists). A Verifier recomputes this exact derivation over the request it received (§11.2 step 6).
 The same canonicalizer and request shape are used by the legacy hasher, so a proof minted here
 recomputes stably cross-implementation (proven by Appendix C).
+
+Step 3 is what makes the definition depend on the wire form alone.
+A call made with no `params` reaches the Verifier as `params: { "_meta": { … } }`, because the proof rides there, and step 2 leaves an empty object.
+A Verifier cannot tell that call from one whose caller sent `params: {}`, so the two are one covered request, `{ method }`, and so is a call whose `params` is `null`.
+A Verifier handed the call with `_meta`, or empty `params`, already taken out reaches the same covered request.
+
+**Legacy form in 1.x.** For the 1.x line, when the covered request is `{ method }`, a Verifier MUST also accept a `requestHash` computed over `{ method, params: {} }`.
+For the 1.x line a Minter MAY sign that form for a call it is given with `params` that hold no member but `_meta`.
+The reference implementation (`@kya-os/mcp`) does, as it did up to 1.26.0, so that Verifiers of 1.26.0 and earlier, which recompute that form for the call as it travels, keep accepting its proofs.
+Otherwise a Minter signs the covered request.
+2.0.0 removes the legacy form: a Minter signs the covered request alone, and a Verifier accepts only it.
 
 ### 8.4 Detached JWS carrier (canonical)
 
@@ -918,8 +930,9 @@ than erroring open.
    its `resolveKey` is authoritative (`trustResolveKeyAuthority`), in which case binding rests on step 2
    plus that contract. A conformant production verifier SHOULD supply `resolveDidKeys`.
 5. `audience === expectedAudience`, else `audience_mismatch`.
-6. `requestHash === recompute(request)` after the §8.3 pre-signing transformation (strip
-   `params._meta` before canonicalizing), else `request_hash_mismatch`.
+6. `requestHash` is the hash of the §8.3 covered request of the call received (`params._meta`
+   removed, and `params` left out when nothing else is in it), or for the 1.x line its §8.3 legacy
+   form, else `request_hash_mismatch`.
 7. **Window** - `expires > created` (`invalid_window`); `expires - created ≤ 60` (`ttl_too_long`);
    `created ≤ now + skew` (`created_in_future`); `expires ≥ now - skew` (`expired`).
 8. **Replay** - `nonce` unseen for `did`, else `nonce_replayed`. If the `consumeNonceIfFresh` seam
@@ -1145,6 +1158,10 @@ By-reference resolution has the same ambiguity, with the Verifier rather than an
 | `org.kya-os/response-proof` | the detached response proof (`ProofMeta`, SPEC.md §7), including the legacy session-bound era; previously `org.kya-os/proof`, read-accepted for one major version | §8.1 |
 | `org.kya-os/did` | the Entity's DID inside a CIMD document | §7.3 |
 | `org.kya-os/delegation-chain` | the caller's `DelegationCredential` chain, root to leaf, carried with a request | §10.5 |
+| `org.kya-os/session` | the KYA-OS session a call of the SPEC.md session profile names | SPEC.md §14 |
+| `org.kya-os/delegation-credential` | the SPEC.md §6.2 `DelegationCredential` a call of the session profile presents | SPEC.md §14 |
+| `org.kya-os/holder-proof` | the holder-of-key request proof of a session-profile call | SPEC.md §14 |
+| `org.kya-os/approvals` | the approval grants of a step-up resume | SPEC.md §14 |
 
 The `org.kya-os` reverse-DNS label is outside the reserved `modelcontextprotocol/mcp` `_meta`
 namespace; the graceful-degradation contract (§6) covers a registry that strips unknown `_meta`
@@ -1327,7 +1344,7 @@ reuse them.
 
 | Vector file | Contents |
 |-------------|----------|
-| `conformance/vectors/card-proof.json` | Signed `org.kya-os/proof.v1` proofs + their RFC 9421 siblings, each carrying its request, the DID-keyed JWKS (`input.jwks`), audience, and window. One positive vector + five negatives (tampered body, tampered signature, wrong audience, expired, kid⇄did forgery). |
+| `conformance/vectors/card-proof.json` | Signed `org.kya-os/proof.v1` proofs + their RFC 9421 siblings, each carrying its request, the DID-keyed JWKS (`input.jwks`), audience, and window. Three positive vectors (the golden proof; a call with no params held as it travels, with its proof over `{ method }`, and for the 1.x line over `{ method, params: {} }`) and seven negatives (tampered body, tampered signature, wrong audience, expired, kid⇄did forgery, no nonce seam, the legacy-form proof held against a call with params). |
 | `conformance/vectors/entity-card.json` | Golden `parseCard`-valid Cards, one per `entityType`, plus the multi-hop VC 2.0 + ZCAP-LD delegation chain (attenuation invariants; leaf invoker === proof `did`) carried by the agent accountability vector. |
 | `conformance/card-vectors.ts` | Deterministic regenerator (TypeScript). |
 | `conformance/verify.py` | The INDEPENDENT cross-language verifier (pure Python stdlib). |

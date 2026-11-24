@@ -71,7 +71,7 @@ Re-keying of the `_meta` registry entries (§2.2) would be specified by a succes
 | Discovery | Entity Card + projections; `/.well-known/mcp`; `server/discover` | SPEC-ENTITY-CARD §5-§6; SPEC.md §10; §3.4 (this document) |
 
 The extension defines **no tools** and **no new JSON-RPC methods**.
-The `_kyaos_handshake` tool and the KYA-OS session lifecycle (SPEC.md §5, §14) are **not part of this extension**; they are the legacy 1.x session profile, retained as an optional application-layer convenience outside the declared surface (see §11 and SPEC-ENTITY-CARD §15.5, Appendix D.4).
+The `_kyaos` handshake tool (`_kyaos_handshake` in its deprecated form) and the KYA-OS session lifecycle (SPEC.md §5, §14) are **not part of this extension**; they are the legacy 1.x session profile, retained as an optional application-layer convenience outside the declared surface (see §11 and SPEC-ENTITY-CARD §15.5, Appendix D.4).
 
 ### 2.2 `_meta` keys
 
@@ -419,7 +419,7 @@ Extension-specific considerations:
 
 1. **Unaware peers.** A peer that ignores this extension gets core MCP behavior end to end; every KYA-OS surface is additive `_meta`, headers, or discovery documents that the graceful-degradation contracts (§4, SPEC-ENTITY-CARD §6) cover.
 2. **`2025-11-25` peers.** The declaration is carried in the initialize-era `capabilities.extensions` field, as an additive member that revision's schema does not define (§3.1); proofs and errors are unchanged.
-3. **Legacy 1.x session profile.** The `_kyaos_handshake` tool, KYA-OS sessions, and the session-bound proof under `_meta["org.kya-os/response-proof"]` (historically `org.kya-os/proof`) remain valid 1.x behavior outside this extension (SPEC.md §5, §14; SPEC-ENTITY-CARD §8.1, §15.5, Appendix D.4).
+3. **Legacy 1.x session profile.** The `_kyaos` handshake tool, KYA-OS sessions, and the session-bound proof under `_meta["org.kya-os/response-proof"]` (historically `org.kya-os/proof`) remain valid 1.x behavior outside this extension (SPEC.md §5, §14; SPEC-ENTITY-CARD §8.1, §15.5, Appendix D.4).
    The two proof eras ride distinct keys and coexist on one server; the session profile is expected to be deprecated at KYA-OS 2.0 in favor of the self-contained profile.
 4. **Legacy bare `proof` key.** The one-major-version acceptance window for the bare `proof` response key is governed by SPEC.md §7.6, which is the single authoritative statement of that window; producers SHOULD emit only namespaced keys.
 

@@ -117,14 +117,14 @@ annotations. The TypeScript/Ajv parity suite in
     │  (well-known-kyaos.json)           │
     │<──────────────────────────────────│
     │                                   │
-    │  POST /handshake                  │
+    │  tools/call _kyaos, "handshake"   │
     │  (handshake-request.json)         │
     │──────────────────────────────────>│
     │  (handshake-response.json)        │
     │<──────────────────────────────────│
     │                                   │
-    │  POST /tools/{method}             │
-    │  + X-Session-Id header            │
+    │  tools/call <tool>, params._meta: │
+    │  org.kya-os/session (SPEC §14)    │
     │──────────────────────────────────>│
     │  Response + detached-proof.json   │
     │<──────────────────────────────────│
@@ -135,10 +135,10 @@ annotations. The TypeScript/Ajv parity suite in
 
 These schemas implement types defined in the [KYA-OS Specification](../SPEC.md):
 
-- **Handshake**: SPEC.md §4.5–4.9
-- **Delegation Credentials**: SPEC.md §4.1–4.2
-- **Detached Proofs**: SPEC.md §5
-- **Discovery**: SPEC.md §14 (Transport Binding)
+- **Handshake**: SPEC.md §5 and §14
+- **Delegation Credentials**: SPEC.md §6.2
+- **Detached Proofs**: SPEC.md §7
+- **Discovery**: SPEC.md §10 (Well-Known Endpoint)
 - **Auditability**: [AUDITABILITY.md](../AUDITABILITY.md)
 
 ## Contributing

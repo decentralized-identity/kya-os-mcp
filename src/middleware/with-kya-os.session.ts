@@ -35,12 +35,14 @@ import { logger } from "../logging/index.js";
 import { KYA_OS_ERROR_CODES } from "../errors.js";
 import type { DetachedProof, SessionContext } from "../types/protocol.js";
 import type {
+  KyaOsCallContext,
   KyaOsToolHandler,
   KyaOsToolResult,
-  KyaOsCallContext,
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
+import { KYA_OS_PROTOCOL_VERSION, protocolVersionRefusal } from "../session/protocol-version.js";
+import { sessionNamedIn } from "./request-meta.js";
 import {
   createPendingProofs,
   type PendingAllowedProof,
@@ -647,6 +649,24 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     content: Array<{ type: string; text: string }>;
     isError?: boolean;
   }> {
+    // The version before the format (SPEC.md §13): a request of another major
+    // version may be shaped otherwise, and is refused for its version.
+    const versionRefusal = protocolVersionRefusal(args.clientProtocolVersion);
+    if (versionRefusal !== undefined) {
+      await emitAudit(
+        'Failed to record rejected session audit event',
+        () => audit?.session('rejected', { succeeded: false, reasonCode: versionRefusal.code }),
+      );
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ success: false, protocolVersion: KYA_OS_PROTOCOL_VERSION, error: versionRefusal }),
+          },
+        ],
+        isError: true,
+      };
+    }
     if (!validateHandshakeFormat(args)) {
       await emitAudit(
         'Failed to record rejected session audit event',
@@ -661,6 +681,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
             type: "text",
             text: JSON.stringify({
               success: false,
+              protocolVersion: KYA_OS_PROTOCOL_VERSION,
               error: {
                 code: KYA_OS_ERROR_CODES.handshake_failed,
                 message:
@@ -673,8 +694,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       };
     }
 
-    const result: HandshakeResult =
-      await sessionManager.validateHandshake(args);
+    const result: HandshakeResult = await sessionManager.validateHandshake(args);
 
     const auditPhase = result.success
       ? 'established'
@@ -706,6 +726,8 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
       content: [
         {
           type: "text",
+          // The response of SPEC.md §5.3: a refusal states the version too,
+          // so a client of another major version learns the one spoken here.
           text: JSON.stringify({
             success: result.success,
             ...(result.session && {
@@ -713,6 +735,8 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
               serverDid: identity.did,
               serverKid: identity.kid,
             }),
+            protocolVersion: KYA_OS_PROTOCOL_VERSION,
+            ...(result.session && { sessionTtl: result.session.ttlMinutes * 60 }),
             ...(result.error && { error: result.error }),
           }),
         },
@@ -780,6 +804,28 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     return sessionId === undefined
       ? { sessionId: undefined, ambiguous: false }
       : { sessionId };
+  }
+
+  /**
+   * The session a call's result is proved under when no host threads one
+   * (SPEC.md §14). The session a call names in its params._meta is the
+   * caller's claim, and every proof carries session ids, so the call is
+   * proved as one that names no session is, but never under a session other
+   * than the one it names: the session it names is taken only when it is the
+   * session a call naming none is proved under, this server's latest and only
+   * live session. That is chosen by the server's own record of its latest
+   * handshake, which no caller sets, and not by the store's count alone, which
+   * a durable store gives only roughly (SessionStore.size). The sessions are
+   * counted before the named one is read, so a caller renews no session but
+   * one the server would have proved its call under anyway.
+   */
+  async function unthreadedProofSession(context?: KyaOsCallContext): Promise<FallbackSession> {
+    const named = sessionNamedIn(context?.requestMeta);
+    if (named === undefined) return ensureSession();
+    if (named !== activeSessionId) return { sessionId: undefined, ambiguous: false };
+    if ((await liveSessionCount()) > 1) return { sessionId: undefined, ambiguous: true };
+    const fallback = await ensureSession();
+    return fallback.sessionId === named ? fallback : { sessionId: undefined, ambiguous: false };
   }
 
   async function createAutoSession(): Promise<string | undefined> {
@@ -876,9 +922,11 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
         return result;
       }
 
-      // Resolve session: explicit param → active session → auto-create
-      // `== null`, as `??` below: a plain-JS caller may thread null.
-      const fallback = sessionId == null ? await ensureSession() : undefined;
+      // Resolve session: explicit param → the session the call names in its
+      // params._meta, when a call naming none would be proved under it (SPEC.md §14) → active
+      // session → auto-create. `== null`, as `??` below: a plain-JS caller may
+      // thread null.
+      const fallback = sessionId == null ? await unthreadedProofSession(context) : undefined;
       const resolvedSessionId = sessionId ?? fallback?.sessionId;
       if (!resolvedSessionId) {
         // Refusing to borrow another client's session must not look like a
@@ -1103,6 +1151,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     sessionId,
     reason,
     outcome = "denied",
+    context,
   ) => {
     const phase = outcome === 'denied' ? 'denied' : 'step_up_required';
     const reasonCode = outcome === 'needs_authorization'
@@ -1145,7 +1194,7 @@ export function createSessionProof(deps: MiddlewareDeps): SessionProof {
     auditedTerminalResponses.add(audited);
     let session: SessionContext | null | undefined;
     try {
-      const resolvedSessionId = sessionId ?? (await ensureSession()).sessionId;
+      const resolvedSessionId = sessionId ?? (await unthreadedProofSession(context)).sessionId;
       session = resolvedSessionId ? await sessionManager.getSession(resolvedSessionId) : undefined;
     } catch (error) {
       await outcomeProofFailed(toolName, error, terminalAuditDelivered);

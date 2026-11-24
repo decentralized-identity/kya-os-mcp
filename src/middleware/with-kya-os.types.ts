@@ -63,6 +63,13 @@ export interface KyaOsCallContext {
    * `withPolicyGate` to verify on a step-up resume.
    */
   approvals?: unknown;
+  /**
+   * The `params._meta` the call arrived with, as the MCP tool adapter
+   * (`toMcpToolCallback`) read it from the SDK's request context. The
+   * delegation gate and the policy gate read the call's delegation, holder
+   * proof and approval grants from it (SPEC.md §14).
+   */
+  requestMeta?: Readonly<Record<string, unknown>>;
 }
 
 export interface KyaOsToolHandler<
@@ -232,10 +239,13 @@ export interface KyaOsDelegationGate {
   /**
    * Wrap a tool handler to require a valid W3C Delegation Credential.
    *
-   * Caller must pass the VC as `_kyaos_delegation` in the tool args.
+   * The caller presents the VC in the call's `params._meta`, under
+   * `org.kya-os/delegation-credential` (SPEC.md §14), which the MCP tool
+   * adapter hands the gate as the call context's `requestMeta`; a 1.x client
+   * may pass it as the `_kyaos_delegation` argument instead.
    * - If absent: returns a `needs_authorization` response with the consentUrl.
    * - If present but invalid: returns a structured error with reason.
-   * - If valid with correct scope: strips `_kyaos_delegation` and calls the handler.
+   * - If valid with correct scope: strips every `_kyaos*` argument and calls the handler.
    */
   wrapWithDelegation(
     toolName: string,

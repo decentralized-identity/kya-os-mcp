@@ -37,6 +37,13 @@ export {
 } from './mcp-tool-callback.js';
 
 export {
+  KYA_OS_SESSION_META_KEY,
+  KYA_OS_DELEGATION_META_KEY,
+  KYA_OS_HOLDER_PROOF_META_KEY,
+  KYA_OS_APPROVALS_META_KEY,
+} from './request-meta.js';
+
+export {
   createKyaOsTransport,
   type Transport,
   type JSONRPCMessage,

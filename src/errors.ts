@@ -21,6 +21,7 @@ export const KYA_OS_ERROR_CODES = {
 
   // Session / Handshake errors
   handshake_failed: "handshake_failed",
+  protocol_version_unsupported: "protocol_version_unsupported",
   session_expired: "session_expired",
   invalid_request: "invalid_request",
 

@@ -247,6 +247,16 @@ describe("SessionManager", () => {
     });
   });
 
+  describe("Protocol version", () => {
+    it("refuses a handshake of another major version before it spends the nonce", async () => {
+      const request = makeRequest({ clientProtocolVersion: "2.0" });
+      const refused = await manager.validateHandshake(request);
+
+      expect(refused).toMatchObject({ success: false, error: { code: "protocol_version_unsupported" } });
+      expect((await manager.validateHandshake({ ...request, clientProtocolVersion: "1.0" })).success).toBe(true);
+    });
+  });
+
   describe("Client metadata", () => {
     it("records trimmed client metadata on the session, with a generated client id", async () => {
       const result = await manager.validateHandshake(makeRequest({

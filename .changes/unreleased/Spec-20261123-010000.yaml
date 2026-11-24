@@ -1,0 +1,12 @@
+kind: Spec
+body: |-
+    **SPEC-ENTITY-CARD §8.3: a Card request proof covers a call with no
+    params as `{ method }`, read from the call as it travels.** The proof
+    rides `params._meta`, so a verifier always holds `params`, and once
+    `_meta` was removed it hashed `{}` where the minter hashed nothing. Now
+    `params` that are absent, `null` or empty once `_meta` is removed are
+    left out. For the 1.x line a verifier also accepts `{ method, params:
+    {} }`, and a client still signs that form for a call given `params:
+    {}`, so 1.26.0 servers keep accepting it. Conformance suite 1.14.0 adds
+    three vectors. See UPGRADING.md, "From 1.26.0".
+time: 2026-11-23T01:00:00.000000-06:00

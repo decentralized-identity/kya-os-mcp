@@ -17,6 +17,7 @@ import type { ResponseProofProfile } from "../types/protocol.js";
 import type { McpAuditEventAdapter } from "../audit/adapters/mcp.js";
 import type {
   KyaOsAuthorizationOutcome,
+  KyaOsCallContext,
   KyaOsConfig,
   KyaOsDelegationConfig,
   KyaOsToolResult,
@@ -31,6 +32,9 @@ import type {
  * the body profile, its envelope under the envelope profile); denial and
  * step-up proofs bind none (SPEC §7.4). `args` are the call's arguments as
  * sent; the proof binds them without the `_kyaos*` control arguments.
+ * `sessionId` is a session the host threaded; without one the proof is made
+ * as for a call that names no session, under the session `context` names
+ * only when that is the same session (SPEC.md §14).
  */
 export type AttachOutcomeProof = (
   response: KyaOsToolResult,
@@ -39,6 +43,7 @@ export type AttachOutcomeProof = (
   sessionId: string | undefined,
   reason: string,
   outcome?: KyaOsAuthorizationOutcome,
+  context?: KyaOsCallContext,
 ) => Promise<KyaOsToolResult>;
 
 /**

@@ -62,7 +62,7 @@ DIDs and Verifiable Credentials are the right fit for this problem:
 | **Delegation Credential** | A W3C Verifiable Credential that grants specific permissions from an issuer (delegator) to a subject (delegate). Contains CRISP constraints defining allowed operations. |
 | **Detached Proof** | A JWS (JSON Web Signature) that cryptographically binds a tool request and response together, enabling non-repudiation and audit. Attached to responses under the reverse-DNS key `org.kya-os/response-proof` within the MCP `_meta` field (prior keys `org.kya-os/proof` and bare `proof` accepted for backward compatibility; see §7.6). |
 | **CRISP Constraints** | **C**onstraints, **R**esources, **I**dentity, **S**cope, **P**olicy — a structured envelope defining what operations a delegation permits: allowed scopes, budget caps, temporal bounds, and audience restrictions. |
-| **Session** | An OPTIONAL, validated, time-bounded convenience context established via the `_kyaos_handshake` tool. Sessions aid replay prevention and provide a stable context for proof generation, but are **not** the durable authority — the per-request detached-JWS proof (§7) and DID-anchored grant (§6) are (see §5 preamble). KYA-OS sessions are independent of MCP's session, which was removed in MCP 2026-07-28 (SEP-2567/SEP-2575). |
+| **Session** | An OPTIONAL, validated, time-bounded convenience context established through the `handshake` action of the `_kyaos` tool (§14). Sessions aid replay prevention and provide a stable context for proof generation, but are **not** the durable authority: the per-request detached-JWS proof (§7) and DID-anchored grant (§6) are (see §5 preamble). KYA-OS sessions are independent of MCP's session, which was removed in MCP 2026-07-28 (SEP-2567/SEP-2575). |
 | **Handshake Nonce** | A cryptographically random value provided by the client during session establishment. Used once; prevents replay attacks. |
 | **Audience** | The intended recipient of a credential or proof, typically the MCP server's DID or domain. Prevents credential/proof misuse across different servers. |
 
@@ -84,19 +84,22 @@ The following diagram illustrates the KYA-OS protocol flow:
          │  │    - audience: "did:web:srv"             │  │
          │  │    - timestamp: <unix epoch seconds>     │  │
          │  │    - agentDid: "did:key:z6Mk..."         │  │
+         │  │    - clientProtocolVersion: "1.0"        │  │
          ├──┴──────────────────────────────────────────┴──►
          │                                                │
          │         ┌─ Validate:                           │
          │         │  • timestamp within ±120s            │
          │         │  • nonce not seen before             │
          │         │  • audience matches server DID       │
+         │         │  • version of this major (§13)       │
          │         └──────────────────────────────────────┤
          │                                                │
          │  ┌──────────────────────────────────────────┐  │
          │  │ 2. HANDSHAKE RESPONSE                    │  │
-         │  │    - sessionId: "kyaos_<uuid>"            │  │
+         │  │    - sessionId: "kyaos_<uuid>"           │  │
          │  │    - serverDid: "did:web:srv"            │  │
-         │  │    - ttlMinutes: 30                      │  │
+         │  │    - protocolVersion: "1.0"              │  │
+         │  │    - sessionTtl: 1800                    │  │
          ◄──┴──────────────────────────────────────────┴──┤
          │                                                │
          │  ┌──────────────────────────────────────────┐  │
@@ -105,12 +108,14 @@ The following diagram illustrates the KYA-OS protocol flow:
          │  │    params:                               │  │
          │  │      name: "read_file"                   │  │
          │  │      arguments: { path: "/etc/hosts" }   │  │
-         │  │      sessionId: "kyaos_..."               │  │
-         │  │      delegation: <DelegationCredential>  │◄── Optional
+         │  │      _meta:                              │  │
+         │  │        org.kya-os/session: "kyaos_..."   │  │
+         │  │        org.kya-os/delegation-credential: │◄── Optional
+         │  │          <DelegationCredential>          │  │
          ├──┴──────────────────────────────────────────┴──►
          │                                                │
          │         ┌─ Process:                            │
-         │         │  • Validate session                  │
+         │         │  • Resolve session (if named)        │
          │         │  • Verify delegation (if present)    │
          │         │  • Execute tool                      │
          │         │  • Generate detached proof           │
@@ -459,8 +464,10 @@ are non-conformant.
 > **Normative framing (MCP 2026-07-28).** The KYA-OS session described in this
 > section is an **OPTIONAL convenience layer**, not the protocol's durable source
 > of authority. The **normative, durable authority** for every KYA-OS interaction
-> is (a) the per-request **holder-of-key detached-JWS proof** (§7), which is
-> self-contained and replay-bound on its own, and (b) the **DID-anchored
+> is (a) the per-request **holder-of-key proof** the caller signs over the call,
+> which is self-contained and replay-bound on its own: the holder proof of §14, a
+> detached proof (§7.4) by the delegation's subject (§11.8), or the Entity Card
+> request proof (SPEC-ENTITY-CARD §8); and (b) the **DID-anchored
 > delegation grant** (§6). A conformant verifier MUST be able to authorize and
 > audit a request from the proof and grant alone, with no server-side session
 > state.
@@ -469,8 +476,8 @@ are non-conformant.
 > `initialized` (SEP-2575) and the `Mcp-Session-Id` header (SEP-2567), making the
 > MCP core stateless: every request is self-contained, and client info, version,
 > and capabilities ride in `_meta` per request. KYA-OS sessions are **KYA-OS's
-> own layer** — established via the `_kyaos_handshake` tool (§14), independent of
-> MCP's now-removed session — and exist only as a **transport/UX convenience**
+> own layer**: they are established through the `_kyaos` tool's `handshake` action (§14), independent of
+> MCP's now-removed session, and exist only as a **transport/UX convenience**
 > (e.g. for wallet-less clients, nonce bookkeeping, and a stable context for proof
 > generation). They are an *application-state handle* in the SEP-2575 sense:
 > explicit and model-visible, never hidden server state on which authorization
@@ -487,21 +494,26 @@ To establish a session, the client sends a handshake request:
 
 ```typescript
 interface HandshakeRequest {
-  nonce: string;      // 16 bytes, base64url-encoded (22 chars, no padding)
-  audience: string;   // Server DID or domain
+  nonce: string;      // At least 16 random bytes, base64url without padding (22 chars or more)
+  audience: string;   // The server's DID
   timestamp: number;  // Unix epoch seconds
-  agentDid?: string;  // Client's DID (optional for anonymous sessions)
+  agentDid?: string;  // Client's DID: a claim, since the handshake is unsigned
   clientInfo?: {      // Optional client metadata
     name: string;
     version?: string;
     platform?: string;
   };
+  clientProtocolVersion?: string; // The version the client speaks, "1.0" (§13)
 }
 ```
 
+The client calls the `_kyaos` tool with `action: "handshake"` beside these members as its arguments (§14).
+The handshake request is those arguments without `action`, as `schemas/handshake-request.json` describes it.
+
 ### 5.2 Validation Rules
 
-The server MUST validate the handshake request:
+The server MUST validate the handshake request.
+It checks the protocol version first, and refuses a request of another major version with `protocol_version_unsupported` before it reads the rest (§13).
 
 1. **Timestamp Skew**: `|server_time - request.timestamp| <= 120 seconds`
    - Reject if outside this window
@@ -512,8 +524,12 @@ The server MUST validate the handshake request:
    - Nonces MUST be retained for at least the acceptance window of rule 1, as §5.5 specifies; retention is not tied to the session TTL
    - When `agentDid` is omitted, the dedupe key is `nonce` alone. Servers MAY keep a shorter minimum retention for anonymous nonces than for authenticated ones (for example 60 and 120 seconds), never below what §5.5 requires
 
-3. **Audience Match**: `request.audience` MUST match the server's DID or expected domain
+3. **Audience Match**: `request.audience` MUST equal the server's DID, character for character
    - Prevents credential forwarding attacks
+   - A domain is not the server's DID: `mcp-server.example.com` does not match `did:web:mcp-server.example.com`
+
+4. **Nonce Form**: `request.nonce` SHOULD be at least 22 base64url characters, as §5.1 says
+   - A 1.x server MAY accept a shorter nonce; 2.0.0 refuses one
 
 ### 5.3 Session Creation
 
@@ -530,9 +546,26 @@ interface SessionContext {
   ttlMinutes: number;        // Default: 30
   agentDid?: string;         // Client DID if provided
   serverDid?: string;        // Server's DID
-  identityState: 'anonymous' | 'authenticated';
+  identityState: 'anonymous' | 'authenticated'; // 'anonymous' for every session a handshake opens
 }
 ```
+
+A session a handshake opens is `anonymous`, with or without an `agentDid`: the handshake is unsigned, so its `agentDid` is a claim the server records and not an identity it has verified.
+
+The server answers a handshake with a JSON object, sent as the text of the first content item of the tool's result:
+
+| Member | In | Value |
+|---|---|---|
+| `success` | every response | `true` when the session is opened, `false` for a refusal |
+| `protocolVersion` | every response | the protocol version the server speaks (§13) |
+| `sessionId` | an acceptance | the session's id, which the client names on its calls (§5.6) |
+| `serverDid` | an acceptance | the server's DID |
+| `serverKid` | an acceptance | the verification method of `serverDid` the server signs its proofs with |
+| `sessionTtl` | an acceptance | the session's idle timeout, in seconds (§5.4) |
+| `error` | a refusal | `{ code, message, remediation? }`, with a code of Appendix A |
+
+A refusal also sets the tool result's `isError`.
+`schemas/handshake-response.json` describes an acceptance.
 
 ### 5.4 Session TTL and Expiry
 
@@ -552,6 +585,12 @@ The nonce cache implementation MUST:
 
 Retention is bounded by the acceptance window, not by the session TTL. A nonce presented after its window is rejected on its timestamp (§5.2 rule 1, §11.3) before the cache is consulted, so keeping it longer adds memory and denial-of-service exposure and no replay protection. The bound holds because every nonce-checked path checks a timestamp window in the same verification: the handshake (§5.2), the detached proof and the holder-binding request proof (`ts` within skew, signed with the nonce, §7.4), and the Entity Card proof (`created`/`expires`, SPEC-ENTITY-CARD §8). The handshake request is unsigned, so a replayed handshake gives its sender nothing that a fresh handshake would not; its nonce check deduplicates and follows the same window. A path that checked a nonce without a timestamp window would have to retain the nonce for as long as the message it protects stays valid.
 
+
+### 5.6 Naming the Session on a Call
+
+A client that has a session names it on each tool call, in `params._meta["org.kya-os/session"]`, as §14 says.
+A session is OPTIONAL: a server serves a call that names none as it serves any other, and a call with no session is authorized by its delegation and proofs alone, as this section's preamble requires.
+Naming a session authorizes nothing either: the session a call names is the caller's claim, and chooses no more than where the server would prove a call that names none (§14).
 ---
 
 ## 6. Delegation
@@ -1393,6 +1432,7 @@ Two kinds of member are removed before canonicalizing:
 2. For `method: "tools/call"`, every member of `params.arguments` whose name begins with `_kyaos`: the KYA-OS control arguments (`_kyaos_delegation`, `_kyaos_proof`, `_kyaos_approvals`).
    They carry the credentials that authorize the call, each authenticated on its own, and the holder-of-key request proof and approval grants are themselves bound to this hash, so covering them would make the hash depend on its own output.
    Tool handlers SHOULD NOT receive control arguments, so that the covered request is the call the tool executes.
+   A client SHOULD carry this data in `params._meta` instead (§14), where rule 1 removes it; the 1.x line still reads the arguments.
    An absent `params.arguments` is covered as `{}`, since a server cannot tell it from an empty one.
 
 Every other `params` member (`name`, `task`, and any future member) is covered.
@@ -1850,7 +1890,7 @@ A verifier that reports whether a call's delegation is fixed by the holder repor
 
 The proof of the Entity Card profile (`org.kya-os/proof.v1`, SPEC-ENTITY-CARD.md §8) carries the same parameter in the protected header of its detached JWS, where the credential presented is the last of the chain the request carries, and is held by the same rules.
 
-The reference implementation's `generateRequestProof` makes the statement from the arguments it is given, `_kyaos_delegation` among them, with no further input, and its `verifyDelegatedCallProof` holds a proof to the credential a call presented, which it takes as a required input.
+The reference implementation's `generateRequestProof` makes the statement from the `delegation` it is given, which a call that carries its credential in `params._meta` (§14) passes, or else from the `_kyaos_delegation` argument a 1.x call sends, and its `verifyDelegatedCallProof` holds a proof to the credential a call presented, which it takes as a required input.
 Its server accepts a proof that names no credential by default, with a warning, through 1.x (`delegation.requestBinding: 'prefer'`), refuses one under `'require'`, and refuses one by default from 2.0.0.
 Appendix C.5 gives a vector, and the `signed-proof/request-binding-*` conformance vectors hold a verifier to each rule.
 
@@ -2040,7 +2080,7 @@ KYA-OS servers SHOULD expose `/.well-known/mcp`. The normative shape is
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.0",
   "serverDid": "did:web:mcp-server.example.com",
   "capabilities": {
     "proofs": true,
@@ -2058,6 +2098,7 @@ KYA-OS servers SHOULD expose `/.well-known/mcp`. The normative shape is
 }
 ```
 
+`version` is the protocol version the server speaks, written as §13 says; a 1.x reader also reads the `MAJOR.MINOR.PATCH` form.
 `serverDid` is the server's own DID, the audience a client binds proofs to.
 `supportedDidMethods` and `proofAlgorithms` are advisory additional properties
 (the schema permits them; it does not require them). Servers running the legacy
@@ -2207,7 +2248,8 @@ Two normative invariants close the confused-deputy class on the invocation path:
 
 An adversary or non-compliant client may omit KYA-OS headers entirely, bypassing identity and delegation checks. Because KYA-OS is an extension to MCP, a server cannot distinguish between a client that does not support KYA-OS and one that is deliberately stripping identity headers.
 
-- Servers that require identity MUST reject tool calls without a valid session (fail-closed)
+- Servers that require identity MUST refuse a tool call that does not prove it (fail-closed): one that presents no delegation that verifies (§6), for a tool that requires delegation, and one without a request proof that verifies (§11.8, or SPEC-ENTITY-CARD §8), where the server requires one
+- A session is not an identity: sessions are OPTIONAL (§5), so this rule never refuses a call because it names no session
 - Servers SHOULD NOT fall back to unauthenticated mode for tools that require delegation
 - The `/.well-known/mcp` endpoint allows clients to discover server requirements before connecting
 
@@ -2296,13 +2338,19 @@ _Non-normative example:_ an organization delegating read access to an external a
 
 ## 13. Protocol Versioning
 
-The current protocol version is `1.0.0`.
+The current protocol version is `1.0`.
+A protocol version is written `MAJOR.MINOR`: two decimal integers joined by a dot, as the handshake schemas take it.
 
-Handshake requests SHOULD include `clientProtocolVersion: "1.0.0"`.
-Handshake responses MUST include `protocolVersion: "1.0.0"`.
+A handshake request SHOULD state the version the client speaks, as `clientProtocolVersion: "1.0"`.
+A request that states none is of version `1.0`.
+For the 1.x line a server MUST also read a `clientProtocolVersion` of the form `MAJOR.MINOR.PATCH`, which earlier text of this section told clients to send, by its major and minor version.
 
-Servers MUST reject clients with an incompatible major version (e.g., a `2.x` server MUST reject a `1.x` client).
-Minor version differences SHOULD be handled gracefully — servers SHOULD implement backward compatibility within a major version.
+A server MUST refuse a handshake whose `clientProtocolVersion` is of a major version other than its own (a `2.x` server refuses a `1.x` client), with the error code `protocol_version_unsupported` (Appendix A), and before it checks anything else of the request, so the refusal spends no nonce.
+A server MUST serve a client of its own major version, whatever its minor version.
+For the 1.x line a server reads a `clientProtocolVersion` that is not a version as none, as 1.x servers have; 2.0.0 refuses it.
+
+Every handshake response states the version the server speaks, as `protocolVersion`, a refusal as well as an acceptance (§5.3), so a client refused for its version learns the version to speak.
+The `identity` action of the `_kyaos` tool (§14) states it too.
 
 ---
 
@@ -2310,11 +2358,38 @@ Minor version differences SHOULD be handled gracefully — servers SHOULD implem
 
 KYA-OS is transport-agnostic. The handshake and proofs use standard MCP mechanisms:
 
-**Handshake**: Implemented as an MCP tool named `_kyaos_handshake`. This is compatible with all MCP transports (stdio, SSE, HTTP Streamable) without modification.
+**Handshake**: Implemented as an MCP tool named `_kyaos`, called with `action: "handshake"` and the members of §5.1 as its arguments.
+The tool's other actions are `identity`, which answers the server's DID, key and protocol version, and `reputation`.
+A 1.x server MAY also register the tool `_kyaos_handshake`, which takes the members of §5.1 with no `action`; that name is deprecated, and 2.0.0 removes it.
+Both work over every MCP transport (stdio, SSE, HTTP Streamable) without modification.
 
 **Proof attachment**: Detached proofs are attached to tool responses in the standard MCP `_meta` field, which is transported transparently by all MCP transport implementations.
 
-**Outbound delegation headers**: When an MCP server makes outbound HTTP calls (not MCP calls), delegation context is propagated via HTTP headers as defined in §8. For MCP-to-MCP calls, delegation context SHOULD be passed via the `_kyaos_handshake` flow.
+**What a tool call carries**: Every KYA-OS datum of a `tools/call` rides its `params._meta`, under a key of its own, so none is a tool argument and none is covered by `requestHash` (§7.3 rule 1):
+
+| Datum | Carrier | Value | When | 1.x argument also read |
+|---|---|---|---|---|
+| Session | `params._meta["org.kya-os/session"]` | the `sessionId` of the handshake response (§5.3) | OPTIONAL, when the client has a session (§5.6) | none |
+| Delegation | `params._meta["org.kya-os/delegation-credential"]` | the §6.2 `DelegationCredential` the call presents, as its issuer signed it: a JSON object with its embedded proof, or a VC-JWT string | for a tool that requires delegation | `_kyaos_delegation` |
+| Holder-of-key request proof | `params._meta["org.kya-os/holder-proof"]` | a detached proof (§7.4) whose `did` is the delegation's subject and whose `audience` is the server's DID, with no `responseHash`, over the call (§7.3), stating its delegation (§7.8): a JSON object, or its JSON text | where the server requires holder binding (§11.8) | `_kyaos_proof` |
+| Approval grants | `params._meta["org.kya-os/approvals"]` | the approval grants of a step-up resume (§9.3) | on a resume | `_kyaos_approvals` |
+
+The response proof rides the result's `_meta["org.kya-os/response-proof"]` (§7.5).
+The Entity Card profile carries its request proof and delegation chain in `params._meta` too, under `org.kya-os/request-proof` and `org.kya-os/delegation-chain` (SPEC-ENTITY-CARD §8.2, §10.5).
+
+A client SHOULD carry each datum in `params._meta`.
+For the 1.x line a server MUST also read the argument the table names, and when a call carries a datum both ways the server MUST read `params._meta` and MUST NOT read the argument.
+A server MUST NOT hand a `_kyaos*` argument to the tool (§7.3).
+2.0.0 reads `params._meta` alone.
+
+The session a call names is the caller's claim: the handshake that opened it is unsigned, and its id appears in every proof made under it, so anyone who has seen such a proof can name it.
+A server MUST NOT authorize a call on it, for instance on a grant it bound to that session.
+A server MUST NOT prove the call's result under it unless it would treat the call as made in that session had it named none, and MUST NOT renew the session's idle time for the call otherwise.
+A server MAY treat a call that names no session as made in its only live session.
+A server that cannot take the session a call names serves the call and makes no session-bound proof for it, and MUST NOT make one under another session.
+
+**Outbound delegation headers**: When an MCP server makes outbound HTTP calls (not MCP calls), delegation context is propagated via HTTP headers as defined in §8.
+For MCP-to-MCP calls, the delegation travels in the call itself, as the table above says.
 
 **Body-free routing**: On HTTP transports, intermediaries MAY route on the MCP
 2026-07-28 routing headers `Mcp-Method` and `Mcp-Name` (SEP-2243) and verify the
@@ -2362,8 +2437,10 @@ KYA-OS is designed to layer cleanly on the MCP 2026-07-28 Release Candidate.
   `Mcp-Session-Id` header (SEP-2567). KYA-OS does not depend on either: every
   KYA-OS request is authorized from its self-contained detached-JWS proof (§7)
   and DID-anchored grant (§6). The KYA-OS session (§5) is an optional KYA-OS-owned
-  convenience layer delivered via the `_kyaos_handshake` tool (§14) and is
-  independent of MCP's removed session.
+  convenience layer delivered through the `_kyaos` tool's `handshake` action (§14) and is
+  independent of MCP's removed session. A server proves a call under the
+  session the call names only where it would prove a call that names none
+  (§14), with or without `Mcp-Session-Id`.
 - **`_meta` reserved-namespace coexistence.** KYA-OS publishes its response proof
   under the reverse-DNS key `org.kya-os/response-proof` and ignores all other `_meta` keys, including
   the MCP-reserved `io.modelcontextprotocol/*` and W3C Trace Context keys
@@ -2487,6 +2564,7 @@ rules, and operational requirements are specified in [`AUDITABILITY.md`](./AUDIT
 | Code | Description |
 |------|-------------|
 | `handshake_failed` | Handshake validation failed (timestamp, nonce, or audience) |
+| `protocol_version_unsupported` | The handshake states a protocol version of another major version (§13) |
 | `session_expired` | Session not found or expired |
 | `delegation_invalid` | Delegation verification failed |
 | `insufficient_scope` | Requested operation outside delegated scope |

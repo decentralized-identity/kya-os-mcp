@@ -89,8 +89,9 @@ export interface GenerateRequestProofInput {
    * is sent (an object, or a VC-JWT by its string), or `'none'` for a call that presents none.
    * Leave it out for a call whose `args` are the arguments it sends: the proof then states
    * `args._kyaos_delegation`, or `'none'` when the arguments hold none. Pass it when the delegation
-   * travels outside the arguments, when it is attached to them after the proof is made, or to name
-   * the delegation of the durable grant a call that presents none is made under.
+   * travels outside the arguments, as it does in the call's `params._meta` (SPEC.md §14), when it is
+   * attached to them after the proof is made, or to name the delegation of the durable grant a call
+   * that presents none is made under.
    */
   delegation?: ReceivedCredential;
 }

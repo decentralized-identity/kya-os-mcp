@@ -12,9 +12,8 @@
  *   - `requireProof(deps, { minLevel? })` — the VERIFY side. Returns a per-request guard that
  *     reads the holder-of-key proof from `_meta['org.kya-os/request-proof']` (legacy `org.kya-os/proof.v1` accepted), RECOMPUTES it via
  *     `./proof` ({@link verifyCardProof}) — every binding, fail-closed — enforces a minimum
- *     assurance, and returns a 401-shaped result on any failure. The caller passes the exact
- *     `{ method, params }` the client signed (i.e. WITHOUT `_meta`), so the recomputed
- *     `requestHash` matches.
+ *     assurance, and returns a 401-shaped result on any failure. The caller passes the call as
+ *     it arrived; the recomputed `requestHash` leaves out `params._meta`, and params left empty.
  *
  * Pure composition over the shipped engine — no new crypto, no runtime (`mcp-i-core`) dependency.
  */
@@ -156,8 +155,9 @@ export type ProofGateResult =
   | { ok: false; status: 401; error: ProofGateError };
 
 /**
- * A per-request holder-of-key guard. Pass the exact request the client SIGNED (`{ method, params }`
- * without `_meta`) and the `_meta` bag that carried the proof; the guard recomputes every binding.
+ * A per-request holder-of-key guard. Pass the call as it arrived (`{ method, params }`) and the
+ * `_meta` bag that carried the proof; the guard recomputes every binding. The covered request
+ * leaves out `params._meta`, and `params` left with no member (SPEC-ENTITY-CARD §8.3).
  */
 export type ProofGuard = (req: ToolRequest, meta: unknown) => Promise<ProofGateResult>;
 

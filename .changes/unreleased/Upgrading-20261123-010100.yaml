@@ -1,0 +1,10 @@
+kind: Upgrading
+body: |-
+    **Send a session-profile call's session, delegation, holder proof and
+    approvals in `params._meta`.** Servers still read the `_kyaos_*`
+    arguments, so 1.26.0 clients keep working. A session a call names in
+    `params._meta["org.kya-os/session"]` is the caller's claim, so a server
+    proves the call under it only where it would prove a call that names no
+    session, and never under another session. See UPGRADING.md, "From
+    1.26.0".
+time: 2026-11-23T01:01:00.000000-06:00

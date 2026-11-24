@@ -16,14 +16,14 @@
     "https://schema.kya-os.org/v1/protocol/delegation/credential/v1.0.1": "0e3c3464b2ba3f8875406604aa1da89012c7e1a9a91f54ac18069a6973a21aec",
     "https://schema.kya-os.org/v1/protocol/delegation/credential/v1.1.0": "0ad17faed15e1ce477cca75076894f2c2d29fd648f3edef28c7f8dc96964d42b",
     "https://schema.kya-os.org/v1/protocol/delegation/credential/v1.2.0": "6e47e1fd7cfeeef9dce4a5b83e9622401cb28d5ca263c08cd1862ab527c35b85",
-    "https://schema.kya-os.org/v1/protocol/handshake/request/v1.0.0": "5efcc84bed67e334de04a3015b992edcf05dc10cca6cb2c80421d16eb9c74b55",
-    "https://schema.kya-os.org/v1/protocol/handshake/response/v1.0.0": "a682b4f0de690c1c63e2070f43f9c7f4574ee3b5fe51d6c967fd1b96661e4f4d",
+    "https://schema.kya-os.org/v1/protocol/handshake/request/v1.0.0": "0c87a24a20077b0015717909d182bc76929c3153d87d7c5d4ba3e9e66e113d68",
+    "https://schema.kya-os.org/v1/protocol/handshake/response/v1.0.0": "7720379d3234cc6366f2f4e2bdb833f570938d2edbeb9e947f98f4030b53f733",
     "https://schema.kya-os.org/v1/protocol/identity/card/v1.1.0": "c572bc3409686dbfd1fcf71c536e9c7d6e7e45d340331f27fc952e3f73b34e2b",
     "https://schema.kya-os.org/v1/protocol/identity/card/v1.2.0": "1f64f65f669dc905851d8f4ede0d41c55e892de8ba303352f6bf8620b22fd3c5",
     "https://schema.kya-os.org/v1/protocol/mcp-extension/settings/v1.0.0": "5b0eb3389a9b8e79512111b6ba113c62e84da2bd753830526ade289c1fb7d249",
     "https://schema.kya-os.org/v1/protocol/proof/detached/v1.0.0": "64bc751519999f25162c72921b7615c5f2c80d5a75d40e08b0687bc4ac0f2b90",
     "https://schema.kya-os.org/v1/protocol/proof/detached/v1.1.0": "9a9b97cef44b11a2677e8cc6b116f1ffe9fa9546da76dbeec22dd72800dab827",
     "https://schema.kya-os.org/v1/protocol/proof/detached/v1.2.0": "a817fe1ebc52d121dbdfd83dc1c3ece8ce2209c86aca0178f5dab2b4b8abef22",
-    "https://schema.kya-os.org/v1/protocol/well-known/v1.0.0": "6b1c04536f2b12464628f397954d26b275f082a4b1f23cbdfb82e8de581e7e33"
+    "https://schema.kya-os.org/v1/protocol/well-known/v1.0.0": "0306fbbbfab995f5f4718144c6624713ec61dd4094bb378a2ec1b9e686b8dd63"
   }
 }

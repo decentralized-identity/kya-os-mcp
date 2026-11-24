@@ -14,6 +14,7 @@ import { canonicalize } from 'json-canonicalize';
 import type { ToolRequest } from '../../proof/generator.js';
 import { base64ToBytes, base64urlDecodeToBytes, bytesToBase64 } from '../../utils/base64.js';
 import { isSmallOrderEd25519CryptoKey } from '../../utils/ed25519-public-key.js';
+import { isRecord } from '../../utils/guards.js';
 import type { CardProofMeta } from './types.js';
 
 const encoder = new TextEncoder();
@@ -128,9 +129,15 @@ export async function es256VerifyRaw(
 }
 
 /**
- * Bind a request to its `requestHash`: SHA-256 over `JCS({ method, params })`, emitted as the RFC
- * 9421 Content-Digest structured field `sha-256=:<base64>:` (chosen so the HTTP Message Signature
- * sibling can carry it verbatim, §8.3/§8.5).
+ * The `requestHash` a 1.x client signs for a request: SHA-256 over `JCS({ method, params })`,
+ * emitted as the RFC 9421 Content-Digest structured field `sha-256=:<base64>:` (chosen so the HTTP
+ * Message Signature sibling can carry it verbatim, §8.3/§8.5).
+ *
+ * `params` are taken without their `_meta` member, and kept whenever the call has them, even
+ * empty, as 1.26.0 signed them: a call given `params: {}` is signed as `{ method, params: {} }`,
+ * the §8.3 legacy form, which verifiers of 1.26.0 and earlier recompute for it. A call with no
+ * `params`, or `null` ones, is signed as `{ method }`. A verifier checks a hash with
+ * {@link requestHashMatches}, which accepts both. 2.0.0 signs the covered request alone.
  *
  * INPUT-SHAPE parity, OUTPUT-FORMAT difference: the JCS input mirrors the legacy hasher's
  * `{ method, params }` shape, so the underlying digest BYTES are identical — but the legacy hasher
@@ -141,11 +148,37 @@ export async function es256VerifyRaw(
  */
 export async function computeRequestHash(req: ToolRequest): Promise<string> {
   const params = stripParamsMeta(req.params);
-  const canonicalRequest = { method: req.method, ...(params ? { params } : {}) };
-  const digest = await sha256(
-    encoder.encode(canonicalize(canonicalRequest as Parameters<typeof canonicalize>[0])),
-  );
+  return await requestHashOf({ method: req.method, ...(params ? { params } : {}) });
+}
+
+/**
+ * Whether `requestHash` binds `req`: it is the hash of the covered request, or, for the 1.x line,
+ * of `{ method, params: {} }` when the covered request has no `params`. A 1.x client signs that
+ * second form for a call given `params: {}` ({@link computeRequestHash}), as 1.26.0 did; 2.0.0
+ * stops accepting it.
+ */
+export async function requestHashMatches(requestHash: string, req: ToolRequest): Promise<boolean> {
+  const covered = coveredRequest(req);
+  if (requestHash === (await requestHashOf(covered))) return true;
+  return !('params' in covered) && requestHash === (await requestHashOf({ method: req.method, params: {} }));
+}
+
+async function requestHashOf(request: object): Promise<string> {
+  const digest = await sha256(encoder.encode(canonicalize(request as Parameters<typeof canonicalize>[0])));
   return `sha-256=:${bytesToBase64(digest)}:`;
+}
+
+/**
+ * The §8.3 covered request, read from the call alone: `params` without its `_meta` member, and
+ * no `params` at all when they are absent, `null`, or an object with no member left. The proof
+ * rides `params._meta`, so a call that had no params reaches a verifier as `params: { _meta }`;
+ * this gives that call and the one its caller minted for the same covered request.
+ */
+function coveredRequest(req: ToolRequest): { method: string; params?: unknown } {
+  const params = stripParamsMeta(req.params);
+  if (params === undefined || params === null) return { method: req.method };
+  if (isRecord(params) && Object.keys(params).length === 0) return { method: req.method };
+  return { method: req.method, params };
 }
 
 /**

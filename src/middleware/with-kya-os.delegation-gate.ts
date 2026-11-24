@@ -26,7 +26,13 @@ import type {
 } from "./with-kya-os.types.js";
 import type { MiddlewareDeps, AttachOutcomeProof, RequireProofLayer } from "./with-kya-os.deps.js";
 import type { GrantResolution } from "./with-kya-os.grants.js";
-import { DEFAULT_APPROVALS_KEY, sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
+import { sanitizeForMessage, withoutControlArgs } from "./with-kya-os.helpers.js";
+import {
+  carried,
+  KYA_OS_APPROVALS_META_KEY,
+  KYA_OS_DELEGATION_META_KEY,
+  KYA_OS_HOLDER_PROOF_META_KEY,
+} from "./request-meta.js";
 import {
   type DelegationRecords,
   type DelegationVerification,
@@ -35,12 +41,16 @@ import {
 import type { AuthorizationEvidence } from "../audit/types.js";
 
 /**
- * Approval grants for a composed policy gate. They ride the reserved
- * `_kyaos_approvals` argument, which is withheld from the handler like every
- * control argument, so they travel on in the call context instead.
+ * Approval grants for a composed policy gate. They ride the call's
+ * `params._meta`, or the reserved `_kyaos_approvals` argument of a 1.x client,
+ * which is withheld from the handler like every control argument, so they
+ * travel on in the call context instead.
  */
-function forwardedApprovals(args: Record<string, unknown>): Pick<KyaOsCallContext, "approvals"> {
-  const approvals = args[DEFAULT_APPROVALS_KEY];
+function forwardedApprovals(
+  args: Record<string, unknown>,
+  requestMeta: Readonly<Record<string, unknown>> | undefined,
+): Pick<KyaOsCallContext, "approvals"> {
+  const approvals = carried(KYA_OS_APPROVALS_META_KEY, args, requestMeta);
   return approvals === undefined ? {} : { approvals };
 }
 
@@ -98,9 +108,18 @@ export function createDelegationGate(
     config: DelegationGateConfig,
     handler: KyaOsToolHandler,
   ): KyaOsToolHandler {
-    return async (args: Record<string, unknown>, sessionId?: string) => {
+    return async (args: Record<string, unknown>, sessionId?: string, incoming?: KyaOsCallContext) => {
       requireProofLayer();
-      const delegationArg = args["_kyaos_delegation"];
+      // What the call carries in its params._meta, or in the _kyaos_* arguments of a 1.x client (SPEC.md §14).
+      const requestMeta = incoming?.requestMeta;
+      const delegationArg = carried(KYA_OS_DELEGATION_META_KEY, args, requestMeta);
+      // The session a call names is its own claim (SPEC.md §14): it is never a
+      // grant's session, and an outcome is proved under it only where the
+      // proof layer would prove a call that names none, from the call context
+      // passed with each outcome proof. Grants are bound to, and resolved
+      // from, only a session the host threads.
+      const proofSession = sessionId;
+      const forwardedMeta = requestMeta === undefined ? {} : { requestMeta };
 
       if (delegationArg === undefined || delegationArg === null) {
         // No delegation pasted — a durable grant may already authorize this call
@@ -113,6 +132,7 @@ export function createDelegationGate(
           args,
           sessionId,
           config.scopeId,
+          requestMeta,
         );
         if (resolvedGrant) {
           const existingGrant = resolvedGrant.grant;
@@ -147,7 +167,8 @@ export function createDelegationGate(
               responsibleParty: resolvedGrant.rootIssuer,
               delegatedScopes: resolvedGrant.delegatedScopes,
             },
-            ...forwardedApprovals(args),
+            ...forwardedApprovals(args, requestMeta),
+            ...forwardedMeta,
           });
         }
 
@@ -163,9 +184,10 @@ export function createDelegationGate(
           challenge,
           toolName,
           args,
-          sessionId,
+          proofSession,
           message,
           "needs_authorization",
+          incoming,
         );
       }
 
@@ -212,8 +234,10 @@ export function createDelegationGate(
           buildDelegationErrorResponse(KYA_OS_ERROR_CODES.delegation_invalid, check.reason),
           toolName,
           args,
-          sessionId,
+          proofSession,
           check.reason,
+          "denied",
+          incoming,
         );
       }
       const { vc, isJwt } = check;
@@ -226,10 +250,11 @@ export function createDelegationGate(
       if (holderBindingMode !== "off" && holderBindingVerifier) {
         const subjectDid = vc.credentialSubject?.id;
         if (subjectDid && isHolderBindingApplicable(subjectDid)) {
-          const proofArg = args["_kyaos_proof"];
+          const proofArg = carried(KYA_OS_HOLDER_PROOF_META_KEY, args, requestMeta);
           if (proofArg === undefined) {
-            const reason =
-              "Holder-of-key proof (_kyaos_proof) is required for this delegation subject";
+            // Adopters match this reason and line word for word, so both stay as 1.26.0 gave
+            // them for the 1.x line, whichever carrier the call used.
+            const reason = "Holder-of-key proof (_kyaos_proof) is required for this delegation subject";
             logUnboundHolder(`: "${toolName}" called without _kyaos_proof`);
             if (holderBindingMode === "enforce") {
               return attachOutcomeProof(
@@ -239,8 +264,10 @@ export function createDelegationGate(
                 ),
                 toolName,
                 args,
-                sessionId,
+                proofSession,
                 reason,
+                "denied",
+                incoming,
               );
             }
           } else {
@@ -280,8 +307,10 @@ export function createDelegationGate(
                   ),
                   toolName,
                   args,
-                  sessionId,
+                  proofSession,
                   reason,
+                  "denied",
+                  incoming,
                 );
               }
             }
@@ -316,8 +345,10 @@ export function createDelegationGate(
           buildDelegationErrorResponse(KYA_OS_ERROR_CODES.insufficient_scope, reason),
           toolName,
           args,
-          sessionId,
+          proofSession,
           reason,
+          "denied",
+          incoming,
         );
       }
 
@@ -371,7 +402,8 @@ export function createDelegationGate(
           responsibleParty,
           delegatedScopes: getDelegationScopes(vc),
         },
-        ...forwardedApprovals(args),
+        ...forwardedApprovals(args, requestMeta),
+        ...forwardedMeta,
       });
     };
   }

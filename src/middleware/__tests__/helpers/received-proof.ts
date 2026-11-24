@@ -84,7 +84,7 @@ export interface TransportHarness {
    */
   send(
     result: KyaOsToolResult,
-    call?: { toolName?: string; args?: Record<string, unknown> },
+    call?: { toolName?: string; args?: Record<string, unknown>; meta?: Record<string, unknown> },
   ): Promise<Record<string, unknown>>;
   /**
    * Answer a `tools/call` of `toolName` with `args` as a server does: the
@@ -93,7 +93,7 @@ export interface TransportHarness {
    * the MCP SDK answers a handler that throws, and its error is rethrown.
    */
   call(
-    call: { toolName: string; args?: Record<string, unknown> },
+    call: { toolName: string; args?: Record<string, unknown>; meta?: Record<string, unknown> },
     run: () => Promise<KyaOsToolResult>,
   ): Promise<Record<string, unknown>>;
 }
@@ -116,13 +116,13 @@ export async function connectTransport(kyaos: KyaOsMiddleware): Promise<Transpor
   await wrapper.start();
   let id = 0;
   // Deliver the request of a `tools/call`, as a client sends it, and return its id.
-  const request = (call: { toolName: string; args?: Record<string, unknown> }): number => {
+  const request = (call: { toolName: string; args?: Record<string, unknown>; meta?: Record<string, unknown> }): number => {
     id += 1;
     inner.onmessage!({
       jsonrpc: '2.0',
       id,
       method: 'tools/call',
-      params: { name: call.toolName, arguments: call.args ?? {} },
+      params: { name: call.toolName, arguments: call.args ?? {}, ...(call.meta === undefined ? {} : { _meta: call.meta }) },
     });
     return id;
   };
@@ -137,7 +137,7 @@ export async function connectTransport(kyaos: KyaOsMiddleware): Promise<Transpor
     async send(result, call = {}) {
       // Without a tool name the result answers no call the transport
       // tracked, as a task result fetched later does.
-      if (call.toolName !== undefined) return answer(request({ toolName: call.toolName, args: call.args }), result);
+      if (call.toolName !== undefined) return answer(request({ toolName: call.toolName, args: call.args, meta: call.meta }), result);
       id += 1;
       return answer(id, result);
     },

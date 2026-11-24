@@ -4,6 +4,75 @@ This file holds the detail behind the Upgrading entries in CHANGELOG.md: the ste
 Each release has one section, newest first, and declares every change of behaviour against the release before it.
 CHANGELOG.md says what changed and names the section here that says what to do about it.
 
+## From 1.26.0
+
+### Do I need to do anything?
+
+Most apps need nothing: code written for 1.26.0 compiles against this version unchanged, and a 1.26.0 client still works against it.
+Check these, where they apply to you:
+
+- You verify Card request proofs for a call with no params, such as `tools/list`: [A Card request proof covers a call with no params by its method](#a-card-request-proof-covers-a-call-with-no-params-by-its-method).
+- You write a session-profile client, or call a wrapped handler yourself rather than through `toMcpToolCallback`: [A call carries its KYA-OS data in params._meta](#a-call-carries-its-kya-os-data-in-params_meta).
+- You read the handshake response, or send `clientProtocolVersion`: [The handshake states its protocol version](#the-handshake-states-its-protocol-version).
+
+### A Card request proof covers a call with no params by its method
+
+A Card request proof rides `params._meta`, so the call a verifier holds always has `params`, and once `_meta` is removed they are an empty object.
+The verifier hashed `{ method, params: {} }` while a minter that followed SPEC-ENTITY-CARD §8.3 hashed `{ method }`, and the proof was refused as `request_hash_mismatch`.
+
+The covered request is now read from the call alone: `params` that are absent, `null`, or empty once `_meta` is removed are left out.
+`verifyCardProof` and `requireProof` apply it, and for the 1.x line also accept a proof over `{ method, params: {} }`.
+A host can hand `requireProof` the call as it arrived, `_meta` and all, and a proof for a call with no params passes however its host hands it over.
+
+What a client signs is unchanged: `computeRequestHash` and `buildCardProof` sign a call given `params: {}` as `{ method, params: {} }`, as 1.26.0 did, so servers on 1.26.0 and earlier keep accepting it.
+2.0.0 signs the covered request alone.
+
+### A call carries its KYA-OS data in params._meta
+
+A session-profile call carries its session, its delegation, its holder-of-key proof and its approval grants in `params._meta`, under the keys SPEC.md §14 lists, and none of them in the tool's arguments:
+
+| Datum | `params._meta` key | Export | 1.x argument, still read |
+| --- | --- | --- | --- |
+| Session | `org.kya-os/session` | `KYA_OS_SESSION_META_KEY` | none |
+| Delegation credential | `org.kya-os/delegation-credential` | `KYA_OS_DELEGATION_META_KEY` | `_kyaos_delegation` |
+| Holder-of-key proof | `org.kya-os/holder-proof` | `KYA_OS_HOLDER_PROOF_META_KEY` | `_kyaos_proof` |
+| Approval grants | `org.kya-os/approvals` | `KYA_OS_APPROVALS_META_KEY` | `_kyaos_approvals` |
+
+A server still reads the arguments, and reads `params._meta` when a call carries a datum both ways.
+`McpServer.registerTool` strips arguments its schema does not name, so a delegation in `params._meta` reaches a gated tool registered with a schema, where `_kyaos_delegation` did not.
+
+#### A client
+
+Put the session id of the handshake response in `params._meta["org.kya-os/session"]`.
+The session a call names is a claim, so a call is proved under it only where a call that names none would be: under the server's only live session, when that is the one it opened last.
+A server that has more than one live session serves a call that names one, and does not prove it, as it serves one that names none.
+Move the delegation, holder proof and approvals from the arguments to their keys.
+Make the holder proof with `generateRequestProof` from the arguments the call sends, and pass the credential as `delegation`, since the arguments no longer hold it.
+
+#### A server
+
+`toMcpToolCallback` reads the call's `params._meta` from the SDK's request context, `extra._meta` or, from SDK 2, `ctx.mcpReq._meta`, and hands it to the wrapped handler as the call context's `requestMeta`.
+A host that calls a wrapped handler itself passes `{ requestMeta: params._meta }` as the third argument.
+
+The session a call names is the caller's claim, and every proof carries session ids, so anyone who has seen one can name it.
+The wrappers, and the `withKyaOs` transport, prove a result under it only when it is the session a call that names none is proved under, which the server's own record of its latest handshake chooses.
+Otherwise the result is proved as that of a call that names no session, never under another session, and the session's idle time is not renewed.
+A grant is bound to, and resolved from, only a session the host threads as the second argument, as before.
+
+The `_kyaos` tool `withKyaOs` registers is the handshake tool SPEC.md §14 now names, with `action: "handshake"`.
+`_kyaos_handshake` is deprecated, as `DEPRECATIONS.md` lists.
+
+### The handshake states its protocol version
+
+The handshake response now states `protocolVersion: "1.0"`, the version the server speaks, in an acceptance and in a refusal, and `sessionTtl`, the session's idle timeout in seconds.
+It validates under `schemas/handshake-response.json`, which now takes `success` and `serverKid`.
+The `identity` action states `protocolVersion: "1.0"`, where it stated `"1.0.0"`.
+
+A handshake whose `clientProtocolVersion` is of another major version, such as `"2.0"`, is refused with `protocol_version_unsupported` before its nonce is spent.
+A version of this major is served, in the form `"1.0"` or the `"1.0.0"` form 1.x clients were told to send.
+A value that is not a version is read, for the 1.x line, as no version, as before; 2.0.0 refuses it.
+The `_kyaos` tool declares `clientProtocolVersion`, so the MCP SDK no longer strips it.
+
 ## From 1.25.0
 
 ### Do I need to do anything?

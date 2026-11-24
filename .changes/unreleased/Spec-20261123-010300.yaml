@@ -1,0 +1,13 @@
+kind: Spec
+body: |-
+    **SPEC.md §5.3 and §13: the handshake response is defined once, and
+    states the protocol version, `"1.0"`.** The response carries
+    `success`, `protocolVersion`, `sessionId`, `serverDid`, `serverKid` and
+    `sessionTtl` in seconds, and a refusal states `protocolVersion` too. A
+    handshake of another major version is refused with the new code
+    `protocol_version_unsupported`, before its nonce is spent. A 1.x server
+    also reads the three-part `"1.0.0"`. The handshake schemas widen to
+    match; `audience` must equal the server's DID. The `_kyaos` tool
+    declares `clientProtocolVersion` as a string, and reads a value of
+    another type as none.
+time: 2026-11-23T01:03:00.000000-06:00

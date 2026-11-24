@@ -27,7 +27,7 @@
  * @module kya-os-transport
  */
 
-import type { KyaOsMiddleware, KyaOsToolHandler } from "./with-kya-os.js";
+import type { KyaOsCallContext, KyaOsMiddleware, KyaOsToolHandler } from "./with-kya-os.js";
 import {
   attachOuterProofLayer,
   withoutOutcomeMeta,
@@ -35,6 +35,7 @@ import {
   withoutPrivateMembers,
 } from "./with-kya-os.session.js";
 import { logger } from "../logging/index.js";
+import { isRecord } from "../utils/guards.js";
 
 /**
  * Minimal Transport interface — matches @modelcontextprotocol/sdk Transport.
@@ -63,6 +64,11 @@ export type JSONRPCMessage = Record<string, unknown>;
 interface PendingCall {
   toolName: string;
   args: Record<string, unknown>;
+  /**
+   * What the proof layer reads of the call (SPEC.md §14): its `params._meta`, where it may name
+   * its session. Absent when the call has none.
+   */
+  context?: KyaOsCallContext;
 }
 
 type ToolResult = {
@@ -97,7 +103,7 @@ export function createKyaOsTransport(
   kyaos: KyaOsMiddleware,
   exclude: readonly string[] = [],
 ): Transport {
-  // Request id → { toolName, args } for pending tool calls
+  // Request id → { toolName, args, context } for pending tool calls
   const pending = new Map<unknown, PendingCall>();
   const excluded = new Set(["_kyaos", "_kyaos_handshake", ...exclude]);
   // From here on the middleware's wrappers stamp what they return, and the
@@ -224,7 +230,7 @@ export function createKyaOsTransport(
             // not apply the core implementation's early error return.
             const handler: KyaOsToolHandler = async () => ({ ...received });
             const addProof = kyaos.wrapWithProof(call.toolName, handler);
-            const proofed = await addProof(call.args);
+            const proofed = await addProof(call.args, undefined, call.context);
             // Error results still traverse the middleware so their terminal
             // audit event is emitted, but they retain the established wire
             // contract: no success proof is attached to an error response.
@@ -313,13 +319,15 @@ export function createKyaOsTransport(
         message.id !== undefined
       ) {
         const params = message.params as
-          | { name?: string; arguments?: Record<string, unknown> }
+          | { name?: string; arguments?: Record<string, unknown>; _meta?: unknown }
           | undefined;
         const toolName = params?.name;
         if (toolName && !excluded.has(toolName)) {
+          const requestMeta = isRecord(params?._meta) ? params._meta : undefined;
           pending.set(message.id, {
             toolName,
             args: params?.arguments ?? {},
+            ...(requestMeta === undefined ? {} : { context: { requestMeta } }),
           });
         }
       } else if (message.method === "notifications/cancelled") {

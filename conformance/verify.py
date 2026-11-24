@@ -91,8 +91,8 @@ sys.dont_write_bytecode = True
 
 from audit_merkle import audit_root, audit_verify_consistency, audit_verify_inclusion
 from base64url import b64url_nopad, padded_base64url_bytes
-from card_proof import (card_proof_request_hash, covered_claims, http_signature_base, resolve_key,
-                        rfc7638_thumbprint)
+from card_proof import (card_proof_request_hash, card_proof_request_hash_binds, covered_claims,
+                        http_signature_base, resolve_key, rfc7638_thumbprint)
 from chain_binding import chain_binding
 from delegation_cases import id_and_reference_cases_hold, signed_form_cases_hold
 from digests import domain_digest
@@ -140,6 +140,19 @@ def main() -> int:
     # 1. Re-derive requestHash from JCS({method, params}) + SHA-256.
     recomputed = card_proof_request_hash(vector["request"])
     results.append(("requestHash JCS+SHA-256 recompute", recomputed == proof["requestHash"]))
+
+    # 1b. A call with no params: its covered request is its method alone, read from the call as it
+    #     travels (params holding only the _meta that carries the proof), and in 1.x the legacy form
+    #     { method, params: {} } binds it too, but not a call whose params hold a member.
+    def binds(vector_id: str) -> bool:
+        item = vector_by_id(vector_file, "card-proof/" + vector_id)
+        return card_proof_request_hash_binds(item["proof"]["requestHash"], item["request"])
+
+    results.append(("requestHash of a call with no params, from the call as it travels", binds("no-params")))
+    results.append(("1.x legacy requestHash over { method, params: {} } binds a call with no params",
+                    binds("no-params-legacy-form")))
+    results.append(("1.x legacy requestHash does not bind a call whose params hold a member",
+                    not binds("legacy-form-with-params")))
 
     # 2. Verify the detached EdDSA JWS over JCS(coveredClaims).
     parts = proof["jws"].split(".")

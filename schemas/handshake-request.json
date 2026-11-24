@@ -13,17 +13,17 @@
     },
     "audience": {
       "type": "string",
-      "description": "The intended recipient's DID (did:key or did:web). MUST match the server's DID for the request to be accepted."
+      "description": "The intended recipient's DID. A server accepts the request only when it equals the server's DID, character for character (SPEC.md §5.2)."
     },
     "timestamp": {
       "type": "integer",
       "minimum": 0,
-      "description": "Unix timestamp in seconds. Server MAY reject requests with timestamps outside acceptable skew window (default: 120 seconds)."
+      "description": "Unix timestamp in seconds. A server MUST refuse a request whose timestamp is outside its skew window (default: 120 seconds; SPEC.md §5.2)."
     },
     "agentDid": {
       "type": "string",
-      "pattern": "^did:(key|web):.+$",
-      "description": "The agent's DID if authenticated. Required for authenticated sessions."
+      "pattern": "^did:[a-z0-9]+:.+$",
+      "description": "The agent's DID. The handshake is unsigned, so this is a claim the server records, not an identity it has verified (SPEC.md §5.1)."
     },
     "clientInfo": {
       "type": "object",
@@ -62,8 +62,8 @@
     },
     "clientProtocolVersion": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+$",
-      "description": "Client's supported KYA-OS protocol version (e.g., '1.0')."
+      "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+      "description": "The KYA-OS protocol version the client speaks, as MAJOR.MINOR (e.g., '1.0'). A 1.x server also reads the MAJOR.MINOR.PATCH form 1.x clients send (SPEC.md §13)."
     },
     "clientCapabilities": {
       "type": "object",

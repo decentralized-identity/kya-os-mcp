@@ -25,6 +25,7 @@ import { MemoryNonceCacheProvider } from '../providers/memory.js';
 import { nonceRetentionSeconds } from '../providers/nonce-retention.js';
 import { admitNonce, checkNonceStore } from '../providers/nonce-admission.js';
 import { SessionStore, MemorySessionStore } from './session-store.js';
+import { protocolVersionRefusal } from './protocol-version.js';
 import { logger } from '../logging/index.js';
 
 export interface SessionConfig {
@@ -123,6 +124,11 @@ export class SessionManager {
    */
   async validateHandshake(request: HandshakeRequest): Promise<HandshakeResult> {
     try {
+      // The version first (SPEC.md §13): a server cannot read the rest of a request of another major
+      // version, and a refused handshake spends no nonce.
+      const versionRefusal = protocolVersionRefusal(request.clientProtocolVersion);
+      if (versionRefusal !== undefined) return { success: false, error: versionRefusal };
+
       const now = Math.floor(Date.now() / 1000);
       const timeDiff = Math.abs(now - request.timestamp);
 
